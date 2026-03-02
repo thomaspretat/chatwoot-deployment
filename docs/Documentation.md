@@ -31,16 +31,13 @@ ALB ENDPOINT (Load Balancer géré par AWS) -> Dispatch entre deux zones de disp
 Zone A:
 
 PUBLIC SUBNET (ALB Node, NAT Gateway et Bastion pour gestion des instances)
-PRIVATE SUBNET APPLICATIVES ()
-    AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs)
-    EC2 Monitoring
+PRIVATE SUBNET APPLICATIVES (AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs) / EC2 Monitoring)
 PRIVATE SUBNET DATABASES (RDS et ElastiCache "primaire", la ou se trouve les chemins principaux)
 
 Zone B:
 
 PUBLIC SUBNET (ALB Node, NAT Gateway)
-PRIVATE SUBNET APPLICATIVES ()
-    AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs)
+PRIVATE SUBNET APPLICATIVES (AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs))
 PRIVATE SUBNET DATABASES (RDS et ElastiCache "backup")
 
 S3 Bucket -> Les datas pour l'application ("Pièces jointes et autres fichiers à stocker")
