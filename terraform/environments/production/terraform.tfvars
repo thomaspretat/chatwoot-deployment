@@ -27,7 +27,7 @@ domain_name     = "app.chatwoot.example.com"
 route53_zone_id = "ZXXXXXXXXXXXXXXXXX"
 
 tags = {
-  Project     = "chatwoot"
+  Project     = "notakaren"
   Environment = "production"
   ManagedBy   = "terraform"
 }
