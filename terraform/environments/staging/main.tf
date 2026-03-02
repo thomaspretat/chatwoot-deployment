@@ -22,16 +22,14 @@ provider "aws" {
 }
 
 module "networking" {
-  source = "../../modules/networking"
+  source = "../../modules/vpc-staging"
 
-  env                  = var.env
-  vpc_cidr             = var.vpc_cidr
-  public_subnet_cidrs  = var.public_subnet_cidrs
-  private_subnet_cidrs = var.private_subnet_cidrs
-  availability_zones   = var.availability_zones
-  enable_nat_gateway   = true
-  single_nat_gateway   = true # Cost saving for staging
-  tags                 = var.tags
+  env                 = var.env
+  vpc_cidr            = var.vpc_cidr
+  public_subnet_cidr  = var.public_subnet_cidr
+  private_subnet_cidr = var.private_subnet_cidr
+  availability_zone   = var.availability_zone
+  tags                = var.tags
 }
 
 module "security_groups" {
