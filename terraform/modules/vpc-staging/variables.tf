@@ -4,23 +4,23 @@ variable "env" {
 }
 
 variable "vpc_cidr" {
-  description = "Bloc CIDR du VPC"
+  description = "Bloc CIDR du VPC staging"
   type        = string
 }
 
-variable "public_subnet_cidr" {
-  description = "Bloc CIDR du subnet public (1 seule AZ en staging)"
-  type        = string
+variable "public_subnet_cidrs" {
+  description = "Liste des CIDR des subnets publics"
+  type        = list(string)
 }
 
-variable "private_subnet_cidr" {
-  description = "Bloc CIDR du subnet privé (1 seule AZ en staging)"
-  type        = string
+variable "private_subnet_cidrs" {
+  description = "Liste des CIDR des subnets privés"
+  type        = list(string)
 }
 
-variable "availability_zone" {
-  description = "AZ unique utilisée en staging (ex: eu-west-3a)"
-  type        = string
+variable "availability_zones" {
+  description = "Liste des AZs utilisées"
+  type        = list(string)
 }
 
 variable "tags" {

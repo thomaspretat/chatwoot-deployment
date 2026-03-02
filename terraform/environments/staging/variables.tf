@@ -13,19 +13,19 @@ variable "vpc_cidr" {
   type        = string
 }
 
-variable "public_subnet_cidr" {
-  description = "CIDR block for the public subnet (single AZ in staging)"
-  type        = string
+variable "public_subnet_cidrs" {
+  description = "List of CIDR blocks for public subnets"
+  type        = list(string)
 }
 
-variable "private_subnet_cidr" {
-  description = "CIDR block for the private subnet (single AZ in staging)"
-  type        = string
+variable "private_subnet_cidrs" {
+  description = "List of CIDR blocks for private subnets"
+  type        = list(string)
 }
 
-variable "availability_zone" {
-  description = "Single availability zone for staging (ex: eu-west-3a)"
-  type        = string
+variable "availability_zones" {
+  description = "List of availability zones"
+  type        = list(string)
 }
 
 variable "allowed_ssh_cidrs" {
