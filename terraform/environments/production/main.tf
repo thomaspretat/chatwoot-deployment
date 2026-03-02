@@ -58,13 +58,13 @@ module "secrets_manager" {
   tags = var.tags
 }
 
-module "acm" {
-  source = "../../modules/acm"
-
-  domain_name = var.domain_name
-  zone_id     = var.route53_zone_id
-  tags        = var.tags
-}
+# module "acm" {
+#   source = "../../modules/acm"
+#   # Décommenter quand le domaine Route53 sera configuré
+#   domain_name = var.domain_name
+#   zone_id     = var.route53_zone_id
+#   tags        = var.tags
+# }
 
 module "s3" {
   source = "../../modules/s3"
@@ -120,7 +120,7 @@ module "alb" {
   vpc_id            = module.networking.vpc_id
   public_subnet_ids = module.networking.public_subnet_ids
   security_group_id = module.security_groups.alb_sg_id
-  certificate_arn   = module.acm.certificate_arn
+  certificate_arn   = "" # module.acm.certificate_arn — décommenter avec ACM
   tags              = var.tags
 }
 
@@ -142,12 +142,12 @@ module "asg" {
   tags                 = var.tags
 }
 
-module "route53" {
-  source = "../../modules/route53"
-
-  zone_id      = var.route53_zone_id
-  domain_name  = var.domain_name
-  alb_dns_name = module.alb.alb_dns_name
-  alb_zone_id  = module.alb.alb_zone_id
-  tags         = var.tags
-}
+# module "route53" {
+#   source = "../../modules/route53"
+#   # Décommenter quand le domaine Route53 sera configuré
+#   zone_id      = var.route53_zone_id
+#   domain_name  = var.domain_name
+#   alb_dns_name = module.alb.alb_dns_name
+#   alb_zone_id  = module.alb.alb_zone_id
+#   tags         = var.tags
+# }

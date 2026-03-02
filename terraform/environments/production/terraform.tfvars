@@ -6,10 +6,10 @@ public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
 private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
 availability_zones   = ["eu-west-3a", "eu-west-3b"]
 
-allowed_ssh_cidrs = ["YOUR_OFFICE_IP/32"]
+allowed_ssh_cidrs = ["81.220.53.127/32"]
 
-bastion_ami_id        = "ami-xxxxxxxxxxxxxxxxx"
-app_ami_id            = "ami-xxxxxxxxxxxxxxxxx"
+bastion_ami_id        = "ami-0f3f2cef1fc7d0edb"
+app_ami_id            = "ami-0f3f2cef1fc7d0edb"
 bastion_instance_type = "t3.micro"
 app_instance_type     = "t3.medium"
 key_name              = "chatwoot-production"
