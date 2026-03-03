@@ -134,6 +134,13 @@ resource "aws_security_group" "bastion" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
+  ingress {
+    from_port   = 2022
+    to_port     = 2022
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port       = 22
     to_port         = 22
