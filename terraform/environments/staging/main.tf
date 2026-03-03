@@ -21,132 +21,264 @@ provider "aws" {
   region = var.aws_region
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# MODULE PARTAGÉ — Networking
+# ─────────────────────────────────────────────────────────────────────────────
+
 module "networking" {
-  source = "../../modules/vpc-staging"
+  source = "../../modules/networking"
 
   env                  = var.env
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
-  private_subnet_cidrs = var.private_subnet_cidrs
+  private_subnet_cidrs = [] # Pas de subnet privé en staging
   availability_zones   = var.availability_zones
+  enable_nat_gateway   = false # EC2 en public subnet, accès Internet via IGW
   tags                 = var.tags
 }
 
-module "security_groups" {
-  source = "../../modules/security-groups"
+# ─────────────────────────────────────────────────────────────────────────────
+# SECURITY GROUPS — Inline (staging-specific)
+#
+# Ordre de création (pas de dépendance circulaire) :
+#   1. bastion_sg  — pas de référence à d'autres SGs
+#   2. monitoring_sg — ingress SSH depuis bastion_sg
+#   3. app_sg — ingress SSH depuis bastion_sg + ingress 9100 depuis monitoring_sg
+# ─────────────────────────────────────────────────────────────────────────────
 
-  env               = var.env
-  vpc_id            = module.networking.vpc_id
-  vpc_cidr          = module.networking.vpc_cidr
-  allowed_ssh_cidrs = var.allowed_ssh_cidrs
-  tags              = var.tags
+resource "aws_security_group" "bastion" {
+  name        = "chatwoot-${var.env}-bastion-sg"
+  description = "SSH depuis les IPs de l'équipe — point d'entrée unique"
+  vpc_id      = module.networking.vpc_id
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_ssh_cidrs
+  }
+
+  # Egress SSH vers le subnet public (app + monitoring) — CIDR, pas de ref SG
+  egress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = var.public_subnet_cidrs
+  }
+
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-bastion-sg" })
 }
 
-module "iam" {
-  source = "../../modules/iam"
+resource "aws_security_group" "monitoring" {
+  name        = "chatwoot-${var.env}-monitoring-sg"
+  description = "Prometheus + Grafana — accès depuis bastion uniquement"
+  vpc_id      = module.networking.vpc_id
 
-  env           = var.env
-  s3_bucket_arn = module.s3.bucket_arn
-  secrets_arns  = module.secrets_manager.all_secret_arns
-  tags          = var.tags
+  # Grafana (accès depuis bastion via tunnel SSH ou ProxyJump)
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_ssh_cidrs
+  }
+
+  # Prometheus UI
+  ingress {
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_ssh_cidrs
+  }
+
+  # SSH depuis le bastion uniquement
+  ingress {
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring-sg" })
 }
 
-module "secrets_manager" {
-  source = "../../modules/secrets-manager"
+resource "aws_security_group" "app" {
+  name        = "chatwoot-${var.env}-app-sg"
+  description = "Chatwoot app — HTTP public, SSH et scraping depuis bastion/monitoring"
+  vpc_id      = module.networking.vpc_id
 
-  env  = var.env
+  # HTTP Chatwoot (accès public)
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # SSH depuis le bastion uniquement (plus de SSH direct depuis Internet)
+  ingress {
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
+  # node_exporter (port 9100) — scraping depuis l'EC2 monitoring uniquement
+  ingress {
+    from_port       = 9100
+    to_port         = 9100
+    protocol        = "tcp"
+    security_groups = [aws_security_group.monitoring.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-app-sg" })
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BASTION — Inline (staging-specific)
+# Point d'entrée SSH unique. ProxyJump vers app et monitoring.
+# ssh -J ubuntu@<bastion_ip> ubuntu@<app_private_ip>
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_instance" "bastion" {
+  ami                         = var.bastion_ami_id
+  instance_type               = var.bastion_instance_type
+  key_name                    = var.key_name
+  subnet_id                   = module.networking.public_subnet_ids[0]
+  vpc_security_group_ids      = [aws_security_group.bastion.id]
+  associate_public_ip_address = true
+
+  root_block_device {
+    volume_size           = 8
+    volume_type           = "gp3"
+    encrypted             = true
+    delete_on_termination = true
+  }
+
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-bastion" })
+}
+
+resource "aws_eip" "bastion" {
+  instance = aws_instance.bastion.id
+  domain   = "vpc"
+  tags     = merge(var.tags, { Name = "chatwoot-${var.env}-bastion-eip" })
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EC2 APP — Inline (staging-specific)
+# Chatwoot (rails + sidekiq) + PostgreSQL + Redis montés via Docker Compose.
+# ACTIVE_STORAGE_SERVICE=local (pas de S3 en staging).
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_instance" "app" {
+  ami                    = var.app_ami_id
+  instance_type          = var.app_instance_type
+  key_name               = var.key_name
+  subnet_id              = module.networking.public_subnet_ids[0]
+  vpc_security_group_ids = [aws_security_group.app.id]
+  iam_instance_profile   = var.iam_instance_profile_name
+
+  root_block_device {
+    volume_size           = 30
+    volume_type           = "gp3"
+    encrypted             = true
+    delete_on_termination = true
+  }
+
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-app" })
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EC2 MONITORING — Inline (staging-specific)
+# Prometheus (collecte métriques) + Grafana (dashboards).
+# Scrape l'EC2 app via node_exporter (port 9100).
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_instance" "monitoring" {
+  ami                    = var.monitoring_ami_id
+  instance_type          = var.monitoring_instance_type
+  key_name               = var.key_name
+  subnet_id              = module.networking.public_subnet_ids[0]
+  vpc_security_group_ids = [aws_security_group.monitoring.id]
+
+  root_block_device {
+    volume_size           = 20
+    volume_type           = "gp3"
+    encrypted             = true
+    delete_on_termination = true
+  }
+
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring" })
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SSM PARAMETER STORE — Inline (staging-specific)
+#
+# Convention : /chatwoot/{env}/{VARIABLE_NAME}
+# Type SecureString : chiffré KMS, valeurs sensibles.
+# Type String : valeurs non-sensibles.
+#
+# lifecycle { ignore_changes = [value] } : Terraform crée le paramètre avec
+# une valeur placeholder mais NE L'ÉCRASE PAS lors des applies suivants.
+# Les vraies valeurs sont à renseigner manuellement ou via un script d'init.
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_ssm_parameter" "secret_key_base" {
+  name  = "/chatwoot/${var.env}/SECRET_KEY_BASE"
+  type  = "SecureString"
+  value = "PLACEHOLDER"
+  lifecycle { ignore_changes = [value] }
   tags = var.tags
 }
 
-module "acm" {
-  source = "../../modules/acm"
-
-  domain_name = var.domain_name
-  zone_id     = var.route53_zone_id
-  tags        = var.tags
+resource "aws_ssm_parameter" "postgres_password" {
+  name  = "/chatwoot/${var.env}/POSTGRES_PASSWORD"
+  type  = "SecureString"
+  value = "PLACEHOLDER"
+  lifecycle { ignore_changes = [value] }
+  tags = var.tags
 }
 
-module "s3" {
-  source = "../../modules/s3"
-
-  env          = var.env
-  bucket_name  = var.s3_bucket_name
-  iam_role_arn = module.iam.role_arn
-  tags         = var.tags
+resource "aws_ssm_parameter" "redis_password" {
+  name  = "/chatwoot/${var.env}/REDIS_PASSWORD"
+  type  = "SecureString"
+  value = "PLACEHOLDER"
+  lifecycle { ignore_changes = [value] }
+  tags = var.tags
 }
 
-module "rds" {
-  source = "../../modules/rds"
-
-  env               = var.env
-  instance_class    = var.rds_instance_class
-  subnet_ids        = module.networking.private_subnet_ids
-  security_group_id = module.security_groups.rds_sg_id
-  db_password       = var.rds_db_password
-  multi_az          = false # Single-AZ for staging
-  deletion_protection = false
-  backup_retention_period = 3
-  tags              = var.tags
+resource "aws_ssm_parameter" "smtp_password" {
+  name  = "/chatwoot/${var.env}/SMTP_PASSWORD"
+  type  = "SecureString"
+  value = "PLACEHOLDER"
+  lifecycle { ignore_changes = [value] }
+  tags = var.tags
 }
 
-module "elasticache" {
-  source = "../../modules/elasticache"
-
-  env                        = var.env
-  node_type                  = var.redis_node_type
-  num_cache_clusters         = 1
-  subnet_ids                 = module.networking.private_subnet_ids
-  security_group_id          = module.security_groups.redis_sg_id
-  automatic_failover_enabled = false
-  multi_az_enabled           = false
-  tags                       = var.tags
+resource "aws_ssm_parameter" "gitlab_registry_token" {
+  name  = "/chatwoot/${var.env}/GITLAB_REGISTRY_TOKEN"
+  type  = "SecureString"
+  value = "PLACEHOLDER"
+  lifecycle { ignore_changes = [value] }
+  tags = var.tags
 }
 
-module "bastion" {
-  source = "../../modules/bastion"
-
-  env               = var.env
-  ami_id            = var.bastion_ami_id
-  instance_type     = var.bastion_instance_type
-  key_name          = var.key_name
-  subnet_id         = module.networking.public_subnet_ids[0]
-  security_group_id = module.security_groups.bastion_sg_id
-  instance_count    = 1 # Single bastion for staging
-  tags              = var.tags
-}
-
-module "alb" {
-  source = "../../modules/alb"
-
-  env               = var.env
-  vpc_id            = module.networking.vpc_id
-  public_subnet_ids = module.networking.public_subnet_ids
-  security_group_id = module.security_groups.alb_sg_id
-  certificate_arn   = module.acm.certificate_arn
-  tags              = var.tags
-}
-
-# Staging uses a static EC2 instead of ASG
-module "ec2" {
-  source = "../../modules/ec2"
-
-  env                  = var.env
-  ami_id               = var.app_ami_id
-  instance_type        = var.app_instance_type
-  key_name             = var.key_name
-  subnet_id            = module.networking.private_subnet_ids[0]
-  security_group_id    = module.security_groups.ec2_sg_id
-  iam_instance_profile = module.iam.instance_profile_name
-  target_group_arn     = module.alb.target_group_arn
-  tags                 = var.tags
-}
-
-module "route53" {
-  source = "../../modules/route53"
-
-  zone_id      = var.route53_zone_id
-  domain_name  = var.domain_name
-  alb_dns_name = module.alb.alb_dns_name
-  alb_zone_id  = module.alb.alb_zone_id
-  tags         = var.tags
+resource "aws_ssm_parameter" "frontend_url" {
+  name  = "/chatwoot/${var.env}/FRONTEND_URL"
+  type  = "String"
+  value = "http://${aws_instance.app.public_ip}"
+  tags  = var.tags
 }

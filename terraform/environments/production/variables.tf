@@ -108,6 +108,12 @@ variable "route53_zone_id" {
   type        = string
 }
 
+variable "iam_instance_profile_name" {
+  description = "Nom de l'IAM Instance Profile pré-existant attaché aux EC2"
+  type        = string
+  default     = "admin-chatwoot"
+}
+
 variable "tags" {
   description = "Common tags"
   type        = map(string)

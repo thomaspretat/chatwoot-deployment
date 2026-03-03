@@ -8,90 +8,88 @@ variable "env" {
   type        = string
 }
 
+# ── Networking ──────────────────────────────────────────────────────────────
+
 variable "vpc_cidr" {
-  description = "CIDR block for the VPC"
+  description = "CIDR block for the staging VPC"
   type        = string
 }
 
 variable "public_subnet_cidrs" {
-  description = "List of CIDR blocks for public subnets"
-  type        = list(string)
-}
-
-variable "private_subnet_cidrs" {
-  description = "List of CIDR blocks for private subnets"
+  description = "CIDR blocks for public subnets (1 seul en staging)"
   type        = list(string)
 }
 
 variable "availability_zones" {
-  description = "List of availability zones"
+  description = "List of availability zones (1 seule en staging)"
   type        = list(string)
 }
+
+# ── Accès SSH ────────────────────────────────────────────────────────────────
 
 variable "allowed_ssh_cidrs" {
-  description = "CIDR blocks allowed to SSH to the bastion"
+  description = "CIDR blocks autorisés en SSH et pour accéder à Grafana/Prometheus"
   type        = list(string)
 }
 
-variable "bastion_ami_id" {
-  description = "AMI ID for the bastion instance"
-  type        = string
-}
+# ── EC2 Bastion ──────────────────────────────────────────────────────────────
 
-variable "app_ami_id" {
-  description = "AMI ID for the application instance"
+variable "bastion_ami_id" {
+  description = "AMI ID for the bastion EC2"
   type        = string
 }
 
 variable "bastion_instance_type" {
-  description = "Instance type for bastion"
+  description = "Instance type for the bastion EC2"
   type        = string
   default     = "t3.micro"
 }
 
-variable "app_instance_type" {
-  description = "Instance type for the static EC2"
+# ── EC2 App (Chatwoot + postgres + redis Docker) ─────────────────────────────
+
+variable "app_ami_id" {
+  description = "AMI ID for the Chatwoot app EC2 (Docker pre-installed)"
   type        = string
 }
+
+variable "app_instance_type" {
+  description = "Instance type for the app EC2"
+  type        = string
+  default     = "t3.small"
+}
+
+# ── EC2 Monitoring (Prometheus + Grafana) ────────────────────────────────────
+
+variable "monitoring_ami_id" {
+  description = "AMI ID for the monitoring EC2 (Docker pre-installed)"
+  type        = string
+}
+
+variable "monitoring_instance_type" {
+  description = "Instance type for the monitoring EC2"
+  type        = string
+  default     = "t3.micro"
+}
+
+# ── IAM ──────────────────────────────────────────────────────────────────────
+
+variable "iam_instance_profile_name" {
+  description = "Nom de l'IAM Instance Profile pré-existant attaché aux EC2"
+  type        = string
+  default     = "admin-chatwoot"
+}
+
+# ── SSH Key ──────────────────────────────────────────────────────────────────
 
 variable "key_name" {
   description = "SSH key pair name"
   type        = string
 }
 
-variable "rds_instance_class" {
-  description = "RDS instance class"
-  type        = string
-}
-
-variable "rds_db_password" {
-  description = "RDS master password"
-  type        = string
-  sensitive   = true
-}
-
-variable "redis_node_type" {
-  description = "ElastiCache node type"
-  type        = string
-}
-
-variable "s3_bucket_name" {
-  description = "S3 bucket name for Chatwoot storage"
-  type        = string
-}
-
-variable "domain_name" {
-  description = "Primary domain name"
-  type        = string
-}
-
-variable "route53_zone_id" {
-  description = "Route53 hosted zone ID"
-  type        = string
-}
+# ── Tags ─────────────────────────────────────────────────────────────────────
 
 variable "tags" {
-  description = "Common tags"
+  description = "Common tags applied to all resources"
   type        = map(string)
   default     = {}
 }
