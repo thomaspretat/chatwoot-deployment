@@ -15,11 +15,12 @@ Chatwoot en production nécessite les services suivants :
 - **Stockage objet (S3)** — Pièces jointes en grande parties mais aussi avatars, exports...
 - **Service email (SMTP)** — Envoi de notifications et gestion du canal email
 
+
 ## 2. Diagrammes d'architecture
 
 ### 2.1 Environnement Production
 
-On peut trouver ce diagramme dans la section "../schema/schema-infra-micro.draw.io.png"
+On peut trouver ce diagramme dans la section `../schema/schema-infra-micro.draw.io.png`
 
 Dans les grandes lignes:
 
@@ -28,20 +29,22 @@ ROUTE53 / CLOUDFLARE (DNS + HTTPS) ->
 INTERNET GATEWAY (géré par AWS) ->
 ALB ENDPOINT (Load Balancer géré par AWS) -> Dispatch entre deux zones de disponibilité:
 
-Zone A:
+**Zone A:**
 
-PUBLIC SUBNET (ALB Node, NAT Gateway et Bastion pour gestion des instances)
-PRIVATE SUBNET APPLICATIVES (AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs) / EC2 Monitoring)
-PRIVATE SUBNET DATABASES (RDS et ElastiCache "primaire", la ou se trouve les chemins principaux)
+- PUBLIC SUBNET (ALB Node, NAT Gateway et Bastion pour gestion des instances)
+- PRIVATE SUBNET APPLICATIVES
+  - AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs)
+  - EC2 Monitoring
+- PRIVATE SUBNET DATABASES (RDS et ElastiCache "primaire", la ou se trouve les chemins principaux)
 
-Zone B:
+**Zone B:**
 
-PUBLIC SUBNET (ALB Node, NAT Gateway)
-PRIVATE SUBNET APPLICATIVES (AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs))
-PRIVATE SUBNET DATABASES (RDS et ElastiCache "backup")
+- PUBLIC SUBNET (ALB Node, NAT Gateway)
+- PRIVATE SUBNET APPLICATIVES
+  - AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs)
+- PRIVATE SUBNET DATABASES (RDS et ElastiCache "backup")
 
-S3 Bucket -> Les datas pour l'application ("Pièces jointes et autres fichiers à stocker")
-
+**S3 Bucket** -> Les datas pour l'application ("Pièces jointes et autres fichiers à stocker")
 
 ### 2.2 Environnement Staging
 
@@ -67,7 +70,6 @@ L'énoncé exige une haute disponibilité. Notakaren gère des centaines de conv
 - Coût doublé sur les NAT Gateway et certaines instances
 - En cas de panne d'AZ, le service continue de fonctionner
 
-
 ### Instances t3.micro pour optimisation free-tier ?
 
 Le projet est un exercice de formation. Même si nous voulons simulé un cas réel, le volume de trafic sera en réalité très faible. Il faut maximiser le Free Tier AWS tout en démontrant que nous sommes capable de maitriser et comprendre un environnement de production.
@@ -79,7 +81,6 @@ Le projet est un exercice de formation. Même si nous voulons simulé un cas ré
 - Les capacités du t3 micro côté CPU et ram sont casu suffisant pour la plus part de la charge de l'exercice
 - En production "réelle", on passerait a minima en t3.small ou t3.medium selon la charge
 
-
 ### ASG (Auto Scaling Groups) vs Docker Swarm
 
 L'architecture doit supporter le scaling automatique de l'application Chatwoot. Nous pouvons orchestrer nos containers via Docker Swarm ou gérer au niveau infrastructure directement avec ASG.
@@ -87,10 +88,11 @@ L'architecture doit supporter le scaling automatique de l'application Chatwoot. 
 **Solution** : Auto Scaling Groups EC2 avec Docker Compose par instance.
 
 **Les raisons qui nous a amené à cette décision** :
+
 - **Le bottleneck est la création de l'EC2 elle-même** : que l'on ajoute un nœud Swarm ou une instance ASG, en fin de compte c'est le temps de lancement de la VM qui est le plus important. ASG est natif AWS et gère ça de base contrairement à Swarm qui n'est pas "automatique" nativement. Nous utiliserons donc un mixte d'AMI personnalisé et de script bash, qui sont assez léger pour ne pas voir de différences entre les deux approches une fois l'instance créez.
 - **Auto Scaling natif** : ASG offre des politiques de scaling plus flexible sur les règles et avec plus de choix — CPU, mémoire, Network, et même des métriques custom CloudWatch comme la profondeur des queues Sidekiq. A noter aussi l'utilisation de Scheduler qui permettent d'augmenter la charge selon certaines heures de la journée ou nous remarquons des pics réguliers.
 - **Swarm n'est pas natif AWS** : il nécessite un manager, une configuration supplémentaire, et la gestion manuelle du cluster en augmentant les réplicas. C'est une couche de complexité sans valeur ajoutée dans notre cas.
-- **Rolling updates** : ASG + ALB gèrent nativement le deregistration delay et la connection, assurant un downtime casi nul. En effet, lors d’une mise à jour (scaling activé), AWS gère automatiquement la suppression des instances plus a jour et le transfert du trafic pour que tes utilisateurs ne subissent pratiquement aucune coupure.
+- **Rolling updates** : ASG + ALB gèrent nativement le deregistration delay et la connection, assurant un downtime casi nul. En effet, lors d'une mise à jour (scaling activé), AWS gère automatiquement la suppression des instances plus a jour et le transfert du trafic pour que tes utilisateurs ne subissent pratiquement aucune coupure.
 - **Simplicité** : Docker Compose sur chaque instance est facile à comprendre, débugger et à maintenir.
 
 **Conséquences** :
@@ -99,38 +101,41 @@ L'architecture doit supporter le scaling automatique de l'application Chatwoot. 
 - Le User Data script clone la configuration depuis GitLab et tire les secrets depuis SSM Parameter Store (AWS Secrets Manager étant un cout additionnels non nécessaire pour nous)
 - Le scaling se fait en ajoutant/retirant des instances EC2 entièrement.
 
-
 ### Gérer Terraform sur deux VPC
 
-Nous avons deux environnements sur deux VPC disctint (Production et Staging) qui partagent une structure similaire mais avec des paramètres différents (taille des instances, nombre d'AZ, ALB ou non). 
+Nous avons deux environnements sur deux VPC disctint (Production et Staging) qui partagent une structure similaire mais avec des paramètres différents (taille des instances, nombre d'AZ, ALB ou non).
 
 **Solution** : Pour optimiser le workflow nous utilisons alors les modules Terraform sous forme de "template". Mais nous n'utilisons pas de "workspace" car notre environnement de staging n'est pas assez "complexe" pour avoir recous a un workspace completement différent pour notre terraform.
 
 **Structure** :
-terraform
-    bootstrap
+
+```
+terraform/
+    bootstrap/
         main.tf
         variables.tf
         outputs.tf
-    environments
-        production
+    environments/
+        production/
             .... .tf
-        staging
+        staging/
             .... .tf
-    modules
-        acm
-        alb
-        asg
+    modules/
+        acm/
+        alb/
+        asg/
         ...
-    scripts
-        user-data.sh # Notre script bash pour le provisionning
-backend.tf  # Mettre notre state sur un S3 Bucket pour facilité le versionning
-versions.tf  # Provider AWS
+    scripts/
+        user-data.sh    # Notre script bash pour le provisionning
+    backend.tf          # Mettre notre state sur un S3 Bucket pour facilité le versionning
+    versions.tf         # Provider AWS
+```
 
 **Conséquences** :
 - Les tfstate files sont complètement isolés chacun dans leurs dossier prod/staging
 - Les modules sont versionnés et testés de manière isolé
 - Le staging n'affecte pas la prod en cas de changement
+
 
 
 ## 4. Estimation des coûts AWS
@@ -158,32 +163,32 @@ Avec le Free Tier actif, le coût réel descend à environ **~$100/mois**, les N
 
 ### 5.1 Utilisateur -> Application
 
-Utilisateur (navigateur/mobile) -> HTTPS (port 443)
-DNS (Route53 / Cloudflare) -> Résolution → ALB DNS name
-Internet Gateway
-ALB (Application Load Balancer) -> TLS, HealthCheck, redigirge 80 vers 443, et 443 vers 3000.
-Target Group (instances EC2 dans l'ASG) -> Round robin sur les AZ
-EC2 Instance (Private Subnet)
-Docker Compose (Nginx, Rails, Sidekiq, RDS/Elasticache sur private subnet -> S3 via natgateway)
+Utilisateur (navigateur/mobile) -> HTTPS (port 443)  
+-> DNS (Route53 / Cloudflare) -> Résolution vers ALB DNS name  
+-> Internet Gateway  
+-> ALB (Application Load Balancer) -> TLS, HealthCheck, redigirge 80 vers 443, et 443 vers 3000.  
+-> Target Group (instances EC2 dans l'ASG) -> Round robin sur les AZ  
+-> EC2 Instance (Private Subnet)  
+-> Docker Compose (Nginx, Rails, Sidekiq, RDS/Elasticache sur private subnet -> S3 via natgateway)
 
 ### 5.2 WebSocket (temps réel)
 
-Navigateur
-ALB (WebSocket supporté nativement) -> Connection
-EC2 → Rails Action Cable / pub/sub via Redis
-ElastiCache Redis
-
+Navigateur  
+-> ALB (WebSocket supporté nativement) -> Connection  
+-> EC2 -> Rails Action Cable / pub/sub via Redis  
+-> ElastiCache Redis
 
 ### 5.3 SSH pour l'administration
 
-Administrateur -> SSH sur port custom via private key
-Bastion Host 
-EC2 Application (Private Subnet)
+Administrateur -> SSH sur port custom via private key  
+-> Bastion Host  
+-> EC2 Application (Private Subnet)
 
 
 ## 6. Flux de déploiement (CI/CD)
 
 A DEFINIR
+
 
 ## 7. Sécurité
 
@@ -197,10 +202,11 @@ sg-rds (5432) <- sg-app
 sg-redis (6379) <- sg-app
 sg-monitoring (9090, 3000) <- sg-bastion, sg-app
 
-### 7.3 Secrets
+### 7.2 Secrets
 
 Nous avons choisis d'utiliser SSM Parameter Store pour gérer nos secrets, alternatives gratuite à AWS Secrets Manager avec les features dont nous avons besoin. Inutile de payer pour AWS Secrets Manager pour des features trop avancé pour notre besoin comme le versionning et le rollout auto des passwords. Reste chiffré.
 A noter que nos EC2 accèderont à ces secrets via IAM Role.
+
 
 
 ## 8. Monitoring
@@ -211,11 +217,13 @@ A noter que nos EC2 accèderont à ces secrets via IAM Role.
 - **Alertes** : A configurer pour avoir les différentes erreurs en temps réel sur des metrics cibles à définir.
 
 
+
 ## 9. Sauvegarde
 
 - **RDS/Elasticache** : snapshots automatiques quotidiens, dispo selon Free tier. Manuel vers S3 si besoin dans le futur.
 - **S3** : versionning activé sur le bucket de stockage
 - **Configuration** : tout "l'infrastructure as code" sera versionné dans GitLab directement dans notre ce repo chatwoot-infra
+
 
 
 ## 10. Docs et références
