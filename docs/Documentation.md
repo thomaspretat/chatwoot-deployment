@@ -194,13 +194,13 @@ A DEFINIR
 
 ### 7.1 Security Groups
 
-sg-alb (80,443) <- 0.0.0.0/0
-sg-bastion (22) <- IP Admin
-sg-app (3000) <- sg-alb
-sg-app (22) <- sg-bastion
-sg-rds (5432) <- sg-app
-sg-redis (6379) <- sg-app
-sg-monitoring (9090, 3000) <- sg-bastion, sg-app
+- sg-alb (80,443) <- 0.0.0.0/0
+- sg-bastion (22) <- IP Admin
+- sg-app (3000) <- sg-alb
+- sg-app (22) <- sg-bastion
+- sg-rds (5432) <- sg-app
+- sg-redis (6379) <- sg-app
+- sg-monitoring (9090, 3000) <- sg-bastion, sg-app
 
 ### 7.2 Secrets
 
