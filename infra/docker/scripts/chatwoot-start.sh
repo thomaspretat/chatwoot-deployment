@@ -37,12 +37,8 @@ chmod 600 /app/chatwoot/.env
 # Lancer les containers
 cd "/app/chatwoot"
 docker compose -f "$COMPOSE_FILE" pull
-docker compose -f "$COMPOSE_FILE" up -d
 
-# En staging uniquement : initialiser la base de données (idempotent)
-# En prod, db:chatwoot_prepare est exécuté via le pipeline CI pour éviter les conflits de migration au scale-out
-if [ "$SSM_ENV" = "staging" ]; then
-  echo "Running db:chatwoot_prepare..."
-  docker compose -f "$COMPOSE_FILE" exec -T rails bundle exec rails db:chatwoot_prepare
-fi
+# Initialiser/migrer la DB avant de lancer notre compose
+docker compose -f "$COMPOSE_FILE" run --rm -T rails bundle exec rails db:chatwoot_prepare || true # si une autre instance fait déjà la migration, on continue
+docker compose -f "$COMPOSE_FILE" up -d
 

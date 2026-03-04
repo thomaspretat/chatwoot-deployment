@@ -453,9 +453,9 @@ resource "aws_eip" "bastion" {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ASG — Launch Template + Auto Scaling Group + scaling policies
-# Rolling update via Instance Refresh (min_healthy_percentage=50).
-# IMPORTANT: db:chatwoot_prepare is run by the CI pipeline via SSM,
-#            NOT in user-data (avoids migration conflicts on scale-out).
+# Rolling update via Instance Refresh (min_healthy_percentage=100).
+# 100% = new instance must be healthy before old one is terminated (one at a time).
+# db:chatwoot_prepare runs at boot on every instance.
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_launch_template" "this" {
@@ -512,7 +512,7 @@ resource "aws_autoscaling_group" "this" {
   instance_refresh {
     strategy = "Rolling"
     preferences {
-      min_healthy_percentage = 50
+      min_healthy_percentage = 100
       instance_warmup        = 120
     }
   }
