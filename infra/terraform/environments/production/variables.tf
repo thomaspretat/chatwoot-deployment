@@ -103,13 +103,8 @@ variable "domain_name" {
   type        = string
 }
 
-variable "route53_zone_id" {
-  description = "Route53 hosted zone ID"
-  type        = string
-}
-
 variable "iam_instance_profile_name" {
-  description = "Nom de l'IAM Instance Profile pré-existant attaché aux EC2"
+  description = "Name of the pre-existing IAM Instance Profile attached to EC2 instances"
   type        = string
   default     = "admin-chatwoot"
 }

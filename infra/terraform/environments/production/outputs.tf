@@ -4,41 +4,46 @@ output "vpc_id" {
 }
 
 output "alb_dns_name" {
-  description = "DNS name of the ALB (à pointer dans Route53)"
+  description = "DNS name of the ALB (to point to in Route53)"
   value       = aws_lb.this.dns_name
 }
 
 output "rds_endpoint" {
-  description = "RDS endpoint (host:port) — à stocker dans Secrets Manager"
+  description = "RDS endpoint (host:port) — to store in Secrets Manager"
   value       = aws_db_instance.this.endpoint
 }
 
 output "rds_address" {
-  description = "RDS hostname seul — pour POSTGRES_HOST dans .env"
+  description = "RDS hostname only — for POSTGRES_HOST in .env"
   value       = aws_db_instance.this.address
 }
 
 output "redis_primary_endpoint" {
-  description = "Redis primary endpoint — pour REDIS_URL dans .env (utiliser rediss://)"
+  description = "Redis primary endpoint — for REDIS_URL in .env (use rediss://)"
   value       = aws_elasticache_replication_group.this.primary_endpoint_address
 }
 
 output "s3_bucket_name" {
-  description = "S3 bucket name pour ACTIVE_STORAGE_SERVICE=amazon"
+  description = "S3 bucket name for ACTIVE_STORAGE_SERVICE=amazon"
   value       = aws_s3_bucket.chatwoot.bucket
 }
 
 output "bastion_public_ips" {
-  description = "IPs publiques des bastions (AZ-a et AZ-b)"
+  description = "Public IPs of the bastions (AZ-a and AZ-b)"
   value       = aws_eip.bastion[*].public_ip
 }
 
 output "asg_name" {
-  description = "Nom de l'ASG — pour SSM et Instance Refresh dans le pipeline CI"
+  description = "ASG name — for SSM and Instance Refresh in the CI pipeline"
   value       = aws_autoscaling_group.this.name
 }
 
 output "ssm_parameter_path" {
-  description = "Chemin racine des paramètres SSM pour cet environnement"
+  description = "Root path of SSM parameters for this environment"
   value       = "/chatwoot/${var.env}"
+}
+
+output "route53_nameservers" {
+  description = "NS records to set at your registrar to delegate DNS to Route53"
+  value       = aws_route53_zone.this.name_servers
 }

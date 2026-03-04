@@ -4,22 +4,22 @@ output "vpc_id" {
 }
 
 output "bastion_public_ip" {
-  description = "IP publique du bastion (Elastic IP stable) — point d'entrée SSH"
+  description = "Public IP of the bastion (stable Elastic IP) — SSH entry point"
   value       = aws_eip.bastion.public_ip
 }
 
 output "app_public_ip" {
-  description = "IP publique de l'EC2 Chatwoot — accès HTTP et SSH"
+  description = "Public IP of the Chatwoot EC2 — HTTP and SSH access"
   value       = aws_instance.app.public_ip
 }
 
 output "monitoring_public_ip" {
-  description = "IP publique de l'EC2 monitoring — Grafana et Prometheus"
+  description = "Public IP of the monitoring EC2 — Grafana and Prometheus"
   value       = aws_instance.monitoring.public_ip
 }
 
 output "grafana_url" {
-  description = "URL Grafana (accès restreint aux IPs de l'équipe)"
+  description = "Grafana URL (access restricted to team IPs)"
   value       = "http://${aws_instance.monitoring.public_ip}:3000"
 }
 
@@ -29,11 +29,11 @@ output "chatwoot_url" {
 }
 
 output "app_instance_id" {
-  description = "EC2 instance ID de l'app (utile pour les commandes SSM)"
+  description = "EC2 instance ID of the app (useful for SSM commands)"
   value       = aws_instance.app.id
 }
 
 output "monitoring_instance_id" {
-  description = "EC2 instance ID du monitoring"
+  description = "EC2 instance ID of the monitoring instance"
   value       = aws_instance.monitoring.id
 }

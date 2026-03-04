@@ -16,19 +16,19 @@ variable "vpc_cidr" {
 }
 
 variable "public_subnet_cidrs" {
-  description = "CIDR blocks for public subnets (1 seul en staging)"
+  description = "CIDR blocks for public subnets (1 only in staging)"
   type        = list(string)
 }
 
 variable "availability_zones" {
-  description = "List of availability zones (1 seule en staging)"
+  description = "List of availability zones (1 only in staging)"
   type        = list(string)
 }
 
 # ── Accès SSH ────────────────────────────────────────────────────────────────
 
 variable "allowed_ssh_cidrs" {
-  description = "CIDR blocks autorisés en SSH et pour accéder à Grafana/Prometheus"
+  description = "CIDR blocks allowed for SSH and to access Grafana/Prometheus"
   type        = list(string)
 }
 
@@ -74,7 +74,7 @@ variable "monitoring_instance_type" {
 # ── IAM ──────────────────────────────────────────────────────────────────────
 
 variable "iam_instance_profile_name" {
-  description = "Nom de l'IAM Instance Profile pré-existant attaché aux EC2"
+  description = "Name of the pre-existing IAM Instance Profile attached to EC2 instances"
   type        = string
   default     = "admin-chatwoot"
 }

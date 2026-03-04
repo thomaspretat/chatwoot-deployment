@@ -22,7 +22,7 @@ provider "aws" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MODULE PARTAGÉ — Networking
+# SHARED MODULE — Networking
 # ─────────────────────────────────────────────────────────────────────────────
 
 module "networking" {
@@ -31,34 +31,34 @@ module "networking" {
   env                  = var.env
   vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
-  private_subnet_cidrs = [] # Pas de subnet privé en staging
+  private_subnet_cidrs = [] 
   availability_zones   = var.availability_zones
-  enable_nat_gateway   = false # EC2 en public subnet, accès Internet via IGW
+  enable_nat_gateway   = false
   tags                 = var.tags
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECURITY GROUPS — Inline (staging-specific)
 #
-# Ordre de création (pas de dépendance circulaire) :
-#   1. bastion_sg  — pas de référence à d'autres SGs
+# Creation order (no circular dependency):
+#   1. bastion_sg  — no reference to other SGs
 #   2. monitoring_sg — ingress SSH depuis bastion_sg
 #   3. app_sg — ingress SSH depuis bastion_sg + ingress 9100 depuis monitoring_sg
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_security_group" "bastion" {
   name        = "chatwoot-${var.env}-bastion-sg"
-  description = "SSH depuis les IPs de l'équipe — point d'entrée unique"
+  description = "SSH only from allowed CIDRs"
   vpc_id      = module.networking.vpc_id
 
   ingress {
-    from_port   = 22
-    to_port     = 22
+    from_port   = 2022
+    to_port     = 2022
     protocol    = "tcp"
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
-  # Egress SSH vers le subnet public (app + monitoring) — CIDR, pas de ref SG
+  # Egress SSH to app and monitoring (for ProxyJump and tunnels SSH)
   egress {
     from_port   = 22
     to_port     = 22
@@ -71,10 +71,10 @@ resource "aws_security_group" "bastion" {
 
 resource "aws_security_group" "monitoring" {
   name        = "chatwoot-${var.env}-monitoring-sg"
-  description = "Prometheus + Grafana — accès depuis bastion uniquement"
+  description = "Prometheus + Grafana — accessible from bastion only"
   vpc_id      = module.networking.vpc_id
 
-  # Grafana (accès depuis bastion via tunnel SSH ou ProxyJump)
+  # Grafana (access from bastion via SSH tunnel or ProxyJump)
   ingress {
     from_port   = 3000
     to_port     = 3000
@@ -90,7 +90,7 @@ resource "aws_security_group" "monitoring" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
-  # SSH depuis le bastion uniquement
+  # SSH from bastion only
   ingress {
     from_port       = 22
     to_port         = 22
@@ -110,10 +110,10 @@ resource "aws_security_group" "monitoring" {
 
 resource "aws_security_group" "app" {
   name        = "chatwoot-${var.env}-app-sg"
-  description = "Chatwoot app — HTTP public, SSH et scraping depuis bastion/monitoring"
+  description = "Chatwoot app — public HTTP, SSH and scraping from bastion/monitoring"
   vpc_id      = module.networking.vpc_id
 
-  # HTTP Chatwoot (accès public)
+  # HTTP Chatwoot (public access)
   ingress {
     from_port   = 80
     to_port     = 80
@@ -121,7 +121,7 @@ resource "aws_security_group" "app" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # SSH depuis le bastion uniquement (plus de SSH direct depuis Internet)
+  # SSH only from bastion (ProxyJump, tunnels SSH)
   ingress {
     from_port       = 22
     to_port         = 22
@@ -129,7 +129,7 @@ resource "aws_security_group" "app" {
     security_groups = [aws_security_group.bastion.id]
   }
 
-  # node_exporter (port 9100) — scraping depuis l'EC2 monitoring uniquement
+  # node_exporter (port 9100) — from monitoring ec2 only
   ingress {
     from_port       = 9100
     to_port         = 9100
@@ -149,7 +149,7 @@ resource "aws_security_group" "app" {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # BASTION — Inline (staging-specific)
-# Point d'entrée SSH unique. ProxyJump vers app et monitoring.
+# Single SSH entry point. ProxyJump to app and monitoring.
 # ssh -J ubuntu@<bastion_ip> ubuntu@<app_private_ip>
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -179,8 +179,8 @@ resource "aws_eip" "bastion" {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # EC2 APP — Inline (staging-specific)
-# Chatwoot (rails + sidekiq) + PostgreSQL + Redis montés via Docker Compose.
-# ACTIVE_STORAGE_SERVICE=local (pas de S3 en staging).
+# Chatwoot (rails + sidekiq) + PostgreSQL + Redis running via Docker Compose.
+# ACTIVE_STORAGE_SERVICE=local (no S3 in staging).
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_instance" "app" {
@@ -203,8 +203,8 @@ resource "aws_instance" "app" {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # EC2 MONITORING — Inline (staging-specific)
-# Prometheus (collecte métriques) + Grafana (dashboards).
-# Scrape l'EC2 app via node_exporter (port 9100).
+# Prometheus (metrics collection) + Grafana (dashboards).
+# Scrapes the app EC2 via node_exporter (port 9100).
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_instance" "monitoring" {
@@ -228,13 +228,13 @@ resource "aws_instance" "monitoring" {
 # ─────────────────────────────────────────────────────────────────────────────
 # SSM PARAMETER STORE — Inline (staging-specific)
 #
-# Convention : /chatwoot/{env}/{VARIABLE_NAME}
-# Type SecureString : chiffré KMS, valeurs sensibles.
-# Type String : valeurs non-sensibles.
+# Convention: /chatwoot/{env}/{VARIABLE_NAME}
+# Type SecureString: KMS-encrypted, sensitive values.
+# Type String: non-sensitive values.
 #
-# lifecycle { ignore_changes = [value] } : Terraform crée le paramètre avec
-# une valeur placeholder mais NE L'ÉCRASE PAS lors des applies suivants.
-# Les vraies valeurs sont à renseigner manuellement ou via un script d'init.
+# lifecycle { ignore_changes = [value] }: Terraform creates the parameter with
+# a placeholder value but does NOT overwrite it on subsequent applies.
+# Actual values must be set manually or via an init script.
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_ssm_parameter" "secret_key_base" {
