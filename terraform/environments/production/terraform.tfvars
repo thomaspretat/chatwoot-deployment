@@ -23,8 +23,7 @@ redis_node_type    = "cache.t3.small"
 
 s3_bucket_name = "chatwoot-production-storage"
 
-domain_name     = "app.chatwoot.example.com"
-route53_zone_id = "ZXXXXXXXXXXXXXXXXX"
+domain_name = "chat.notakaren.com"
 
 tags = {
   Project     = "notakaren"

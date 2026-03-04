@@ -22,8 +22,8 @@ provider "aws" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MODULES PARTAGÉS
-# Ces modules sont réutilisés entre prod et staging avec des variables différentes.
+# SHARED MODULES
+# These modules are reused between prod and staging with different variables.
 # ─────────────────────────────────────────────────────────────────────────────
 
 module "networking" {
@@ -34,7 +34,7 @@ module "networking" {
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
   availability_zones   = var.availability_zones
-  enable_nat_gateway   = true  # 1 NAT GW par AZ (haute disponibilité)
+  enable_nat_gateway   = true  # 1 NAT GW per AZ (high availability)
   single_nat_gateway   = false
   tags                 = var.tags
 }
@@ -42,13 +42,13 @@ module "networking" {
 # ─────────────────────────────────────────────────────────────────────────────
 # SECURITY GROUPS — Inline (production-specific)
 #
-# Les egress cross-SG utilisent des CIDRs pour éviter les dépendances circulaires
-# (ex: ALB SG → EC2 SG → ALB SG). La sécurité est maintenue via l'ingress strict.
+# Cross-SG egress rules use CIDRs to avoid circular dependencies
+# (e.g. ALB SG → EC2 SG → ALB SG). Security is maintained via strict ingress rules.
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_security_group" "alb" {
   name        = "chatwoot-${var.env}-alb-sg"
-  description = "Accept HTTPS/HTTP depuis Internet, forward vers EC2 sur port 3000"
+  description = "Accept HTTPS/HTTP from Internet, forward to EC2 on port 3000"
   vpc_id      = module.networking.vpc_id
 
   ingress {
@@ -66,7 +66,7 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Egress vers les subnets privés sur le port app (évite référence circulaire avec ec2_sg)
+  # Egress to private subnets on app port (avoids circular reference with ec2_sg)
   egress {
     from_port   = 3000
     to_port     = 3000
@@ -79,7 +79,7 @@ resource "aws_security_group" "alb" {
 
 resource "aws_security_group" "bastion" {
   name        = "chatwoot-${var.env}-bastion-sg"
-  description = "SSH depuis les IPs de l'équipe uniquement"
+  description = "SSH from team IPs only"
   vpc_id      = module.networking.vpc_id
 
   ingress {
@@ -89,7 +89,7 @@ resource "aws_security_group" "bastion" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
-  # Egress SSH vers les subnets privés (EC2 ASG) — pas de référence à ec2_sg
+  # SSH egress to private subnets (EC2 ASG) — no reference to ec2_sg
   egress {
     from_port   = 22
     to_port     = 22
@@ -102,10 +102,10 @@ resource "aws_security_group" "bastion" {
 
 resource "aws_security_group" "ec2" {
   name        = "chatwoot-${var.env}-ec2-sg"
-  description = "Accessible uniquement depuis ALB (port 3000) et Bastion (port 22)"
+  description = "Accessible only from ALB (port 3000) and Bastion (port 22)"
   vpc_id      = module.networking.vpc_id
 
-  # Trafic applicatif depuis l'ALB uniquement
+  # Application traffic from ALB only
   ingress {
     from_port       = 3000
     to_port         = 3000
@@ -113,7 +113,7 @@ resource "aws_security_group" "ec2" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  # SSH depuis le bastion uniquement
+  # SSH from bastion only
   ingress {
     from_port       = 22
     to_port         = 22
@@ -121,7 +121,7 @@ resource "aws_security_group" "ec2" {
     security_groups = [aws_security_group.bastion.id]
   }
 
-  # Egress total : pull images Docker, Secrets Manager (HTTPS), S3, SSM
+  # Full egress: Docker image pull, Secrets Manager (HTTPS), S3, SSM
   egress {
     from_port   = 0
     to_port     = 0
@@ -134,7 +134,7 @@ resource "aws_security_group" "ec2" {
 
 resource "aws_security_group" "rds" {
   name        = "chatwoot-${var.env}-rds-sg"
-  description = "PostgreSQL accessible uniquement depuis EC2"
+  description = "PostgreSQL accessible only from EC2"
   vpc_id      = module.networking.vpc_id
 
   ingress {
@@ -149,7 +149,7 @@ resource "aws_security_group" "rds" {
 
 resource "aws_security_group" "redis" {
   name        = "chatwoot-${var.env}-redis-sg"
-  description = "Redis accessible uniquement depuis EC2"
+  description = "Redis accessible only from EC2"
   vpc_id      = module.networking.vpc_id
 
   ingress {
@@ -163,7 +163,7 @@ resource "aws_security_group" "redis" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# S3 — Stockage Chatwoot (ACTIVE_STORAGE_SERVICE=amazon)
+# S3 — Chatwoot storage (ACTIVE_STORAGE_SERVICE=amazon)
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_s3_bucket" "chatwoot" {
@@ -208,9 +208,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "chatwoot" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RDS PostgreSQL 16 — Multi-AZ, subnet privé, chiffré
-# Chatwoot v4+ requiert pgvector, supporté nativement sur RDS PG16.
-# db:chatwoot_prepare active l'extension automatiquement au premier déploiement.
+# RDS PostgreSQL 16 — Multi-AZ, private subnet, encrypted
+# Chatwoot v4+ requires pgvector, natively supported on RDS PG16.
+# db:chatwoot_prepare enables the extension automatically on first deployment.
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_db_subnet_group" "this" {
@@ -264,8 +264,8 @@ resource "aws_db_instance" "this" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ELASTICACHE REDIS 7 — Multi-AZ, TLS activé (transit_encryption_enabled=true)
-# Utiliser REDIS_URL=rediss:// (double s) + REDIS_OPENSSL_VERIFY_MODE=none
+# ELASTICACHE REDIS 7 — Multi-AZ, TLS enabled (transit_encryption_enabled=true)
+# Use REDIS_URL=rediss:// (double s) + REDIS_OPENSSL_VERIFY_MODE=none
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_elasticache_subnet_group" "this" {
@@ -299,39 +299,68 @@ resource "aws_elasticache_replication_group" "this" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ACM — Certificat TLS (décommenter quand le domaine Route53 sera configuré)
+# ROUTE53 — Hosted zone + enregistrement A vers l'ALB
+#
+# Step 1: terraform apply → creates the zone and ACM validation records
+# Step 2: terraform output route53_nameservers → copy the 4 NS records
+# Step 3: enter the NS records at your registrar (OVH, Gandi, Namecheap...)
+# Step 4: wait for ACM validation (~5 min after DNS propagation)
+# Step 5: uncomment the HTTPS listener below + terraform apply
 # ─────────────────────────────────────────────────────────────────────────────
 
-# resource "aws_acm_certificate" "this" {
-#   domain_name       = var.domain_name
-#   validation_method = "DNS"
-#   lifecycle { create_before_destroy = true }
-#   tags = merge(var.tags, { Name = var.domain_name })
-# }
-#
-# resource "aws_route53_record" "acm_validation" {
-#   for_each = {
-#     for dvo in aws_acm_certificate.this.domain_validation_options : dvo.domain_name => {
-#       name   = dvo.resource_record_name
-#       record = dvo.resource_record_value
-#       type   = dvo.resource_record_type
-#     }
-#   }
-#   zone_id = var.route53_zone_id
-#   name    = each.value.name
-#   type    = each.value.type
-#   records = [each.value.record]
-#   ttl     = 60
-# }
-#
-# resource "aws_acm_certificate_validation" "this" {
-#   certificate_arn         = aws_acm_certificate.this.arn
-#   validation_record_fqdns = [for record in aws_route53_record.acm_validation : record.fqdn]
-# }
+resource "aws_route53_zone" "this" {
+  name = var.domain_name
+  tags = merge(var.tags, { Name = var.domain_name })
+}
+
+resource "aws_route53_record" "app" {
+  zone_id = aws_route53_zone.this.zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_lb.this.dns_name
+    zone_id                = aws_lb.this.zone_id
+    evaluate_target_health = true
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ACM — TLS Certificate
+# Terraform creates the certificate and DNS validation records in Route53.
+# ACM validates automatically once NS records are propagated at the registrar.
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_acm_certificate" "this" {
+  domain_name       = var.domain_name
+  validation_method = "DNS"
+  lifecycle { create_before_destroy = true }
+  tags = merge(var.tags, { Name = var.domain_name })
+}
+
+resource "aws_route53_record" "acm_validation" {
+  for_each = {
+    for dvo in aws_acm_certificate.this.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+  zone_id = aws_route53_zone.this.zone_id
+  name    = each.value.name
+  type    = each.value.type
+  records = [each.value.record]
+  ttl     = 60
+}
+
+resource "aws_acm_certificate_validation" "this" {
+  certificate_arn         = aws_acm_certificate.this.arn
+  validation_record_fqdns = [for record in aws_route53_record.acm_validation : record.fqdn]
+}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ALB — Application Load Balancer, multi-AZ, public subnets
-# Listener 80 → redirect 443. Listener 443 à décommenter avec ACM.
+# Listener 80 → redirect 443
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_lb" "this" {
@@ -392,7 +421,7 @@ resource "aws_lb_listener" "http_redirect" {
 # }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BASTIONS — 2 instances (1 par AZ) avec Elastic IP
+# BASTIONS — 2 instances (1 par AZ) with Elastic IP
 # ProxyJump : ssh -J ubuntu@<bastion_ip> ubuntu@<ec2_private_ip>
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -425,8 +454,8 @@ resource "aws_eip" "bastion" {
 # ─────────────────────────────────────────────────────────────────────────────
 # ASG — Launch Template + Auto Scaling Group + scaling policies
 # Rolling update via Instance Refresh (min_healthy_percentage=50).
-# IMPORTANT : db:chatwoot_prepare est exécuté par le pipeline CI via SSM,
-#             PAS dans le user-data (évite conflits de migration au scale-out).
+# IMPORTANT: db:chatwoot_prepare is run by the CI pipeline via SSM,
+#            NOT in user-data (avoids migration conflicts on scale-out).
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_launch_template" "this" {
@@ -547,31 +576,15 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ROUTE53 — Enregistrement DNS (décommenter quand le domaine sera configuré)
-# ─────────────────────────────────────────────────────────────────────────────
-
-# resource "aws_route53_record" "app" {
-#   zone_id = var.route53_zone_id
-#   name    = var.domain_name
-#   type    = "A"
-#
-#   alias {
-#     name                   = aws_lb.this.dns_name
-#     zone_id                = aws_lb.this.zone_id
-#     evaluate_target_health = true
-#   }
-# }
-
-# ─────────────────────────────────────────────────────────────────────────────
 # SSM PARAMETER STORE — Inline (production-specific)
 #
-# Convention : /chatwoot/{env}/{VARIABLE_NAME}
-# Type SecureString : chiffré KMS, valeurs sensibles.
-# Type String : valeurs non-sensibles (endpoints calculés par Terraform).
+# Convention: /chatwoot/{env}/{VARIABLE_NAME}
+# Type SecureString: KMS-encrypted, sensitive values.
+# Type String: non-sensitive values (endpoints computed by Terraform).
 #
-# lifecycle { ignore_changes = [value] } : Terraform crée le paramètre avec
-# une valeur placeholder mais NE L'ÉCRASE PAS lors des applies suivants.
-# Les vraies valeurs sont à renseigner manuellement ou via le pipeline CI.
+# lifecycle { ignore_changes = [value] }: Terraform creates the parameter with
+# a placeholder value but does NOT overwrite it on subsequent applies.
+# Actual values must be set manually or via the CI pipeline.
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_ssm_parameter" "secret_key_base" {
@@ -614,7 +627,7 @@ resource "aws_ssm_parameter" "gitlab_registry_token" {
   tags = var.tags
 }
 
-# Valeurs calculées automatiquement par Terraform (endpoints AWS)
+# Values automatically computed by Terraform (AWS endpoints)
 resource "aws_ssm_parameter" "postgres_host" {
   name  = "/chatwoot/${var.env}/POSTGRES_HOST"
   type  = "String"
