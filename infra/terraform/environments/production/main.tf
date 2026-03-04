@@ -454,11 +454,9 @@ resource "aws_launch_template" "this" {
     }
   }
 
-  user_data = filebase64("${path.root}/../../scripts/userdata-production.sh")
-
   tag_specifications {
     resource_type = "instance"
-    tags          = merge(var.tags, { Name = "chatwoot-${var.env}-app" })
+    tags          = merge(var.tags, { Name = "chatwoot-${var.env}-app", Role = "chatwoot" })
   }
 
   lifecycle {
@@ -614,6 +612,14 @@ resource "aws_ssm_parameter" "gitlab_registry_token" {
   tags = var.tags
 }
 
+resource "aws_ssm_parameter" "grafana_password" {
+  name  = "/chatwoot/${var.env}/GRAFANA_PASSWORD"
+  type  = "SecureString"
+  value = "PLACEHOLDER"
+  lifecycle { ignore_changes = [value] }
+  tags = var.tags
+}
+
 # Valeurs calculées automatiquement par Terraform (endpoints AWS)
 resource "aws_ssm_parameter" "postgres_host" {
   name  = "/chatwoot/${var.env}/POSTGRES_HOST"
@@ -640,5 +646,26 @@ resource "aws_ssm_parameter" "s3_bucket_name" {
   name  = "/chatwoot/${var.env}/S3_BUCKET_NAME"
   type  = "String"
   value = aws_s3_bucket.chatwoot.bucket
+  tags  = var.tags
+}
+
+resource "aws_ssm_parameter" "active_storage_service" {
+  name  = "/chatwoot/${var.env}/ACTIVE_STORAGE_SERVICE"
+  type  = "String"
+  value = "amazon"
+  tags  = var.tags
+}
+
+resource "aws_ssm_parameter" "aws_region" {
+  name  = "/chatwoot/${var.env}/AWS_REGION"
+  type  = "String"
+  value = var.aws_region
+  tags  = var.tags
+}
+
+resource "aws_ssm_parameter" "redis_openssl_verify_mode" {
+  name  = "/chatwoot/${var.env}/REDIS_OPENSSL_VERIFY_MODE"
+  type  = "String"
+  value = "none"
   tags  = var.tags
 }

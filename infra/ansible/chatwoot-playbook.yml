@@ -1,0 +1,61 @@
+- hosts: all
+  become: true  # Faire les tâches en root
+  tasks:
+  - name: Update apt
+    apt:
+      update_cache: true   # apt update
+      upgrade: dist        # upgrade
+
+  - name: Installer les packages utiles
+    apt:
+      name:
+        - curl
+        - unzip
+        - awscli
+
+  - name: Installer Docker
+    shell: curl -fsSL https://get.docker.com | sh   # Utiliser le conveninent script disponible plus simple
+
+  - name: Créer le dossier de l'app
+    file:
+      path: /app/chatwoot
+      state: directory
+
+  - name: Copier le docker-compose prod
+    copy:
+      src: ../docker/docker-compose-prod.yml
+      dest: /app/chatwoot/docker-compose-prod.yml
+
+  - name: Copier le docker-compose staging
+    copy:
+      src: ../docker/docker-compose-staging.yml
+      dest: /app/chatwoot/docker-compose-staging.yml
+
+  - name: Copier le script de provisionning des secrets
+    copy:
+      src: ../docker/scripts/chatwoot-start.sh
+      dest: /app/chatwoot/chatwoot-start.sh
+      mode: "0755"
+
+  - name: Créer un service avec ce script pour provisionner les secrets au boot via systemd
+    copy:
+      dest: /etc/systemd/system/chatwoot.service
+      content: |
+          [Unit]
+          Description=Chatwoot
+          After=docker.service
+          Requires=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/app/chatwoot/chatwoot-start.sh
+
+          [Install]
+          WantedBy=multi-user.target
+
+  - name: Activer le service au boot
+    systemd_service:
+      name: chatwoot
+      enabled: yes
+      daemon_reload: true

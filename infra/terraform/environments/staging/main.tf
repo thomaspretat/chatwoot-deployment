@@ -213,6 +213,7 @@ resource "aws_instance" "monitoring" {
   key_name               = var.key_name
   subnet_id              = module.networking.public_subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.monitoring.id]
+  iam_instance_profile   = var.iam_instance_profile_name
 
   root_block_device {
     volume_size           = 20
@@ -270,6 +271,14 @@ resource "aws_ssm_parameter" "smtp_password" {
 
 resource "aws_ssm_parameter" "gitlab_registry_token" {
   name  = "/chatwoot/${var.env}/GITLAB_REGISTRY_TOKEN"
+  type  = "SecureString"
+  value = "PLACEHOLDER"
+  lifecycle { ignore_changes = [value] }
+  tags = var.tags
+}
+
+resource "aws_ssm_parameter" "grafana_password" {
+  name  = "/chatwoot/${var.env}/GRAFANA_PASSWORD"
   type  = "SecureString"
   value = "PLACEHOLDER"
   lifecycle { ignore_changes = [value] }

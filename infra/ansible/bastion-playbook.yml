@@ -1,0 +1,48 @@
+- hosts: all
+  become: true
+  tasks:
+  - name: Update apt
+    apt:
+      update_cache: true
+      upgrade: dist
+
+  - name: Installer fail2ban
+    apt:
+      name: fail2ban
+      state: present
+
+  - name: Désactiver le login root SSH
+    lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: '^#?PermitRootLogin'
+      line: 'PermitRootLogin no'
+    
+  # Changer le port SSH par défault pour sshd
+
+  - name: Désactiver authentification par mot de passe
+    lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: '^#?PasswordAuthentication'
+      line: 'PasswordAuthentication no'
+
+  - name: Configurer fail2ban pour SSH
+    copy:
+      dest: /etc/fail2ban/jail.local
+      content: |
+        [sshd]
+        enabled = true
+        port = ssh
+        maxretry = 3
+        bantime = 3600
+        findtime = 600
+
+  - name: Activer et démarrer fail2ban
+    systemd_service:
+      name: fail2ban
+      enabled: yes
+      state: started
+
+  - name: Redémarrer sshd
+    systemd_service:
+      name: sshd
+      state: restarted
