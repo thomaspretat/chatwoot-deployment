@@ -6,24 +6,34 @@
       update_cache: true
       upgrade: dist
 
-  - name: Installer fail2ban
+  - name: Installer fail2ban et ufw
     apt:
-      name: fail2ban
+      name:
+        - fail2ban
+        - ufw
       state: present
+
+#-----------------SSH Hardening
+
+  - name: Changer le port SSH à 2022
+    lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: '^#?Port '
+      line: 'Port 2022'
 
   - name: Désactiver le login root SSH
     lineinfile:
       path: /etc/ssh/sshd_config
       regexp: '^#?PermitRootLogin'
       line: 'PermitRootLogin no'
-    
-  # Changer le port SSH par défault pour sshd
 
-  - name: Désactiver authentification par mot de passe
+  - name: Désactiver authentification password
     lineinfile:
       path: /etc/ssh/sshd_config
       regexp: '^#?PasswordAuthentication'
       line: 'PasswordAuthentication no'
+
+#-----------------Fail2ban
 
   - name: Configurer fail2ban pour SSH
     copy:
@@ -31,7 +41,7 @@
       content: |
         [sshd]
         enabled = true
-        port = ssh
+        port = 2022
         maxretry = 3
         bantime = 3600
         findtime = 600
@@ -41,6 +51,30 @@
       name: fail2ban
       enabled: yes
       state: started
+
+#-----------------UFW
+
+  - name: Bloquer tout le trafic entrant par défaut
+    ufw:
+      default: deny
+      direction: incoming
+
+  - name: Autoriser tout le trafic sortant par défaut
+    ufw:
+      default: allow
+      direction: outgoing
+
+  - name: Autoriser SSH sur le port 2022
+    ufw:
+      rule: allow
+      port: '2022'
+      proto: tcp
+
+  - name: Activer UFW
+    ufw:
+      state: enabled
+
+#-----------------Restart services
 
   - name: Redémarrer sshd
     systemd_service:

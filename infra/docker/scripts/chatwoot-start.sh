@@ -32,13 +32,17 @@ echo "$PARAMETERS" | while IFS=$'\t' read -r name value; do   # sépare entre le
   echo "$(basename "$name")=$value"                           # récupere le nom uniquement et pas le path, exemple: /home/fichier.txt → fichier.txt
 done > /app/chatwoot/.env
 
-chmod 600 "$/app/chatwoot/.env"
+chmod 600 /app/chatwoot/.env
 
 # Lancer les containers
 cd "/app/chatwoot"
 docker compose -f "$COMPOSE_FILE" pull
 docker compose -f "$COMPOSE_FILE" up -d
 
-# Initialiser la base de données avec db:chatwoot_prepare
-docker compose -f "$COMPOSE_FILE" exec -T rails bundle exec rails db:chatwoot_prepare
+# En staging uniquement : initialiser la base de données (idempotent)
+# En prod, db:chatwoot_prepare est exécuté via le pipeline CI pour éviter les conflits de migration au scale-out
+if [ "$SSM_ENV" = "staging" ]; then
+  echo "Running db:chatwoot_prepare..."
+  docker compose -f "$COMPOSE_FILE" exec -T rails bundle exec rails db:chatwoot_prepare
+fi
 

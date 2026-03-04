@@ -12,6 +12,10 @@
         - curl
         - unzip
         - awscli
+        - fail2ban
+        - ufw
+
+#-----------------Monitoring provision
 
   - name: Installer Docker
     shell: curl -fsSL https://get.docker.com | sh
@@ -59,3 +63,87 @@
       name: monitoring
       enabled: yes
       daemon_reload: true
+
+#-----------------SSH Hardening
+
+  - name: Changer le port SSH à 2022
+    lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: '^#?Port '
+      line: 'Port 2022'
+
+  - name: Désactiver le login root SSH
+    lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: '^#?PermitRootLogin'
+      line: 'PermitRootLogin no'
+
+  - name: Désactiver authentification par mot de passe
+    lineinfile:
+      path: /etc/ssh/sshd_config
+      regexp: '^#?PasswordAuthentication'
+      line: 'PasswordAuthentication no'
+
+  - name: Configurer fail2ban pour SSH
+    copy:
+      dest: /etc/fail2ban/jail.local
+      content: |
+        [sshd]
+        enabled = true
+        port = 2022
+        maxretry = 3
+        bantime = 3600
+        findtime = 600
+
+  - name: Activer et démarrer fail2ban
+    systemd_service:
+      name: fail2ban
+      enabled: yes
+      state: started
+
+#-----------------UFW
+
+  - name: Bloquer tout le trafic entrant par défaut
+    ufw:
+      default: deny
+      direction: incoming
+
+  - name: Autoriser tout le trafic sortant par défaut
+    ufw:
+      default: allow
+      direction: outgoing
+
+  - name: Autoriser SSH sur le port 2022
+    ufw:
+      rule: allow
+      port: '2022'
+      proto: tcp
+
+  - name: Autoriser Prometheus (port 9090)
+    ufw:
+      rule: allow
+      port: '9090'
+      proto: tcp
+
+  - name: Autoriser Grafana (port 3000)
+    ufw:
+      rule: allow
+      port: '3000'
+      proto: tcp
+
+  - name: Autoriser node-exporter (port 9100)
+    ufw:
+      rule: allow
+      port: '9100'
+      proto: tcp
+
+  - name: Activer UFW
+    ufw:
+      state: enabled
+
+#-----------------Restart services
+
+  - name: Redémarrer sshd
+    systemd_service:
+      name: sshd
+      state: restarted

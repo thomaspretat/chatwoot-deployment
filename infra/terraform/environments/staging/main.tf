@@ -60,8 +60,8 @@ resource "aws_security_group" "bastion" {
 
   # Egress SSH to app and monitoring (for ProxyJump and tunnels SSH)
   egress {
-    from_port   = 22
-    to_port     = 22
+    from_port   = 2022
+    to_port     = 2022
     protocol    = "tcp"
     cidr_blocks = var.public_subnet_cidrs
   }
@@ -92,8 +92,8 @@ resource "aws_security_group" "monitoring" {
 
   # SSH from bastion only
   ingress {
-    from_port       = 22
-    to_port         = 22
+    from_port       = 2022
+    to_port         = 2022
     protocol        = "tcp"
     security_groups = [aws_security_group.bastion.id]
   }
@@ -123,8 +123,8 @@ resource "aws_security_group" "app" {
 
   # SSH only from bastion (ProxyJump, tunnels SSH)
   ingress {
-    from_port       = 22
-    to_port         = 22
+    from_port       = 2022
+    to_port         = 2022
     protocol        = "tcp"
     security_groups = [aws_security_group.bastion.id]
   }
@@ -198,7 +198,7 @@ resource "aws_instance" "app" {
     delete_on_termination = true
   }
 
-  tags = merge(var.tags, { Name = "chatwoot-${var.env}-app" })
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-app", Role = "chatwoot" })
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -289,5 +289,20 @@ resource "aws_ssm_parameter" "frontend_url" {
   name  = "/chatwoot/${var.env}/FRONTEND_URL"
   type  = "String"
   value = "http://${aws_instance.app.public_ip}"
+  tags  = var.tags
+}
+
+# Staging : postgres et redis tournent en local dans Docker Compose
+resource "aws_ssm_parameter" "postgres_host" {
+  name  = "/chatwoot/${var.env}/POSTGRES_HOST"
+  type  = "String"
+  value = "postgres"
+  tags  = var.tags
+}
+
+resource "aws_ssm_parameter" "redis_url" {
+  name  = "/chatwoot/${var.env}/REDIS_URL"
+  type  = "String"
+  value = "redis://redis:6379"
   tags  = var.tags
 }

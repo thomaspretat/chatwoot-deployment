@@ -83,16 +83,16 @@ resource "aws_security_group" "bastion" {
   vpc_id      = module.networking.vpc_id
 
   ingress {
-    from_port   = 22
-    to_port     = 22
+    from_port   = 2022
+    to_port     = 2022
     protocol    = "tcp"
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
   # SSH egress to private subnets (EC2 ASG) — no reference to ec2_sg
   egress {
-    from_port   = 22
-    to_port     = 22
+    from_port   = 2022
+    to_port     = 2022
     protocol    = "tcp"
     cidr_blocks = var.private_subnet_cidrs
   }
@@ -102,7 +102,7 @@ resource "aws_security_group" "bastion" {
 
 resource "aws_security_group" "ec2" {
   name        = "chatwoot-${var.env}-ec2-sg"
-  description = "Accessible only from ALB (port 3000) and Bastion (port 22)"
+  description = "Accessible only from ALB (port 3000) and Bastion (port 2022)"
   vpc_id      = module.networking.vpc_id
 
   # Application traffic from ALB only
@@ -115,8 +115,8 @@ resource "aws_security_group" "ec2" {
 
   # SSH from bastion only
   ingress {
-    from_port       = 22
-    to_port         = 22
+    from_port       = 2022
+    to_port         = 2022
     protocol        = "tcp"
     security_groups = [aws_security_group.bastion.id]
   }
