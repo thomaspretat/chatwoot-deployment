@@ -35,6 +35,11 @@
       src: ../docker/docker-compose-staging.yml
       dest: /app/chatwoot/docker-compose-staging.yml
 
+  - name: Copier la config Nginx
+    copy:
+      src: ../docker/config/nginx.conf
+      dest: /app/chatwoot/nginx.conf
+
   - name: Copier le script de démarrage chatwoot
     copy:
       src: ../docker/scripts/chatwoot-start.sh
