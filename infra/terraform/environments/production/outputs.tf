@@ -47,3 +47,19 @@ output "route53_nameservers" {
   description = "NS records to set at your registrar to delegate DNS to Route53"
   value       = aws_route53_zone.this.name_servers
 }
+
+output "iam_user_name" {
+  description = "IAM user for Terraform / CI/CD"
+  value       = module.iam.iam_user_name
+}
+
+output "iam_access_key_id" {
+  description = "Access key ID (à configurer dans AWS CLI / CI/CD)"
+  value       = module.iam.iam_access_key_id
+}
+
+output "iam_secret_access_key" {
+  description = "Secret access key (sensible — récupérer via: terraform output -raw iam_secret_access_key)"
+  value       = module.iam.iam_secret_access_key
+  sensitive   = true
+}

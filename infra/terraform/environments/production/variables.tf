@@ -103,12 +103,6 @@ variable "domain_name" {
   type        = string
 }
 
-variable "iam_instance_profile_name" {
-  description = "Name of the pre-existing IAM Instance Profile attached to EC2 instances"
-  type        = string
-  default     = "admin-chatwoot"
-}
-
 variable "tags" {
   description = "Common tags"
   type        = map(string)

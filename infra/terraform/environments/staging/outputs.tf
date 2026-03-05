@@ -37,3 +37,19 @@ output "monitoring_instance_id" {
   description = "EC2 instance ID of the monitoring instance"
   value       = aws_instance.monitoring.id
 }
+
+output "iam_user_name" {
+  description = "IAM user for Terraform / CI/CD"
+  value       = module.iam.iam_user_name
+}
+
+output "iam_access_key_id" {
+  description = "Access key ID (à configurer dans AWS CLI / CI/CD)"
+  value       = module.iam.iam_access_key_id
+}
+
+output "iam_secret_access_key" {
+  description = "Secret access key (sensible — récupérer via: terraform output -raw iam_secret_access_key)"
+  value       = module.iam.iam_secret_access_key
+  sensitive   = true
+}

@@ -163,6 +163,17 @@ resource "aws_security_group" "redis" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# IAM — Users (Terraform/CI) + EC2 Role + Instance Profile
+# ─────────────────────────────────────────────────────────────────────────────
+
+module "iam" {
+  source        = "../../modules/iam"
+  env           = var.env
+  s3_bucket_arn = aws_s3_bucket.chatwoot.arn
+  tags          = var.tags
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # S3 — Chatwoot storage (ACTIVE_STORAGE_SERVICE=amazon)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -465,7 +476,7 @@ resource "aws_launch_template" "this" {
   key_name      = var.key_name
 
   iam_instance_profile {
-    name = var.iam_instance_profile_name
+    name = module.iam.instance_profile_name
   }
 
   network_interfaces {

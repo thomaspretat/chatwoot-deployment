@@ -71,14 +71,6 @@ variable "monitoring_instance_type" {
   default     = "t3.micro"
 }
 
-# ── IAM ──────────────────────────────────────────────────────────────────────
-
-variable "iam_instance_profile_name" {
-  description = "Name of the pre-existing IAM Instance Profile attached to EC2 instances"
-  type        = string
-  default     = "admin-chatwoot"
-}
-
 # ── SSH Key ──────────────────────────────────────────────────────────────────
 
 variable "key_name" {

@@ -38,6 +38,16 @@ module "networking" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# IAM — Users (Terraform/CI) + EC2 Role + Instance Profile
+# ─────────────────────────────────────────────────────────────────────────────
+
+module "iam" {
+  source = "../../modules/iam"
+  env    = var.env
+  tags   = var.tags
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SECURITY GROUPS — Inline (staging-specific)
 #
 # Creation order (no circular dependency):
@@ -189,7 +199,7 @@ resource "aws_instance" "app" {
   key_name               = var.key_name
   subnet_id              = module.networking.public_subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.app.id]
-  iam_instance_profile   = var.iam_instance_profile_name
+  iam_instance_profile   = module.iam.instance_profile_name
 
   root_block_device {
     volume_size           = 30
@@ -213,7 +223,7 @@ resource "aws_instance" "monitoring" {
   key_name               = var.key_name
   subnet_id              = module.networking.public_subnet_ids[0]
   vpc_security_group_ids = [aws_security_group.monitoring.id]
-  iam_instance_profile   = var.iam_instance_profile_name
+  iam_instance_profile   = module.iam.instance_profile_name
 
   root_block_device {
     volume_size           = 20
