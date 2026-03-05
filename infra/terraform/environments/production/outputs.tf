@@ -4,7 +4,7 @@ output "vpc_id" {
 }
 
 output "alb_dns_name" {
-  description = "DNS name of the ALB (to point to in Route53)"
+  description = "DNS name of the ALB — CNAME chatwoot.thomaspretat.com → this value in Cloudflare"
   value       = aws_lb.this.dns_name
 }
 
@@ -43,9 +43,14 @@ output "ssm_parameter_path" {
   value       = "/chatwoot/${var.env}"
 }
 
-output "route53_nameservers" {
-  description = "NS records to set at your registrar to delegate DNS to Route53"
-  value       = aws_route53_zone.this.name_servers
+output "acm_validation_record" {
+  description = "CNAME to add in Cloudflare for ACM certificate validation"
+  value = {
+    for dvo in aws_acm_certificate.this.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      value  = dvo.resource_record_value
+    }
+  }
 }
 
 output "iam_user_name" {

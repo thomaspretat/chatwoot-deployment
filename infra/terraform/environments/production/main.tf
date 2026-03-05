@@ -359,36 +359,12 @@ resource "aws_elasticache_replication_group" "this" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ROUTE53 — Hosted zone + enregistrement A vers l'ALB
+# ACM — TLS Certificate (validated manually via Cloudflare DNS)
 #
-# Step 1: terraform apply → creates the zone and ACM validation records
-# Step 2: terraform output route53_nameservers → copy the 4 NS records
-# Step 3: enter the NS records at your registrar (OVH, Gandi, Namecheap...)
-# Step 4: wait for ACM validation (~5 min after DNS propagation)
-# Step 5: uncomment the HTTPS listener below + terraform apply
-# ─────────────────────────────────────────────────────────────────────────────
-
-resource "aws_route53_zone" "this" {
-  name = var.domain_name
-  tags = merge(var.tags, { Name = var.domain_name })
-}
-
-resource "aws_route53_record" "app" {
-  zone_id = aws_route53_zone.this.zone_id
-  name    = var.domain_name
-  type    = "A"
-
-  alias {
-    name                   = aws_lb.this.dns_name
-    zone_id                = aws_lb.this.zone_id
-    evaluate_target_health = true
-  }
-}
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ACM — TLS Certificate
-# Terraform creates the certificate and DNS validation records in Route53.
-# ACM validates automatically once NS records are propagated at the registrar.
+# Step 1: terraform apply → creates the certificate in "Pending validation"
+# Step 2: terraform output acm_validation_record → copy the CNAME into Cloudflare
+# Step 3: wait for ACM validation (~5 min after DNS propagation)
+# Step 4: uncomment the HTTPS listener below + terraform apply
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_acm_certificate" "this" {
@@ -396,26 +372,6 @@ resource "aws_acm_certificate" "this" {
   validation_method = "DNS"
   lifecycle { create_before_destroy = true }
   tags = merge(var.tags, { Name = var.domain_name })
-}
-
-resource "aws_route53_record" "acm_validation" {
-  for_each = {
-    for dvo in aws_acm_certificate.this.domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      record = dvo.resource_record_value
-      type   = dvo.resource_record_type
-    }
-  }
-  zone_id = aws_route53_zone.this.zone_id
-  name    = each.value.name
-  type    = each.value.type
-  records = [each.value.record]
-  ttl     = 60
-}
-
-resource "aws_acm_certificate_validation" "this" {
-  certificate_arn         = aws_acm_certificate.this.arn
-  validation_record_fqdns = [for record in aws_route53_record.acm_validation : record.fqdn]
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -472,7 +428,7 @@ resource "aws_lb_listener" "http_redirect" {
 #   port              = 443
 #   protocol          = "HTTPS"
 #   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-#   certificate_arn   = aws_acm_certificate_validation.this.certificate_arn
+#   certificate_arn   = aws_acm_certificate.this.arn
 #
 #   default_action {
 #     type             = "forward"
