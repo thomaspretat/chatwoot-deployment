@@ -35,34 +35,8 @@
       src: ../docker/docker-compose-staging.yml
       dest: /app/chatwoot/docker-compose-staging.yml
 
-  - name: Copier le script de provisionning des secrets
-    copy:
-      src: ../docker/scripts/chatwoot-start.sh
-      dest: /app/chatwoot/chatwoot-start.sh
-      mode: "0755"
-
-  - name: Créer un service avec ce script pour provisionner les secrets au boot via systemd
-    copy:
-      dest: /etc/systemd/system/chatwoot.service
-      content: |
-          [Unit]
-          Description=Chatwoot
-          After=docker.service
-          Requires=docker.service
-
-          [Service]
-          Type=oneshot
-          RemainAfterExit=yes
-          ExecStart=/app/chatwoot/chatwoot-start.sh
-
-          [Install]
-          WantedBy=multi-user.target
-
-  - name: Activer le service au boot
-    systemd_service:
-      name: chatwoot
-      enabled: yes
-      daemon_reload: true
+  - name: Pré-pull de l'image Chatwoot # cache les layers dans l'AMI pour un pull plus rapide lors du script de provisionning
+    shell: cd /app/chatwoot && docker compose -f docker-compose-prod.yml pull
 
 #-----------------SSH Hardening
 
