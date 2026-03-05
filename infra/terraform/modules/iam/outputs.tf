@@ -1,3 +1,8 @@
+output "ec2_role_name" {
+  description = "Name of the EC2 IAM role (for attaching additional policies per environment)"
+  value       = aws_iam_role.ec2.name
+}
+
 output "instance_profile_name" {
   description = "Name of the EC2 IAM instance profile"
   value       = aws_iam_instance_profile.ec2.name

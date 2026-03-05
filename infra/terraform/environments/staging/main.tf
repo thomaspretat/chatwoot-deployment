@@ -47,6 +47,13 @@ module "iam" {
   tags   = var.tags
 }
 
+# SSM Run Command — permet à la CI d'exécuter des commandes sur l'instance
+# pour redémarrer rails/sidekiq sans recréer l'instance (pas d'ASG en staging)
+resource "aws_iam_role_policy_attachment" "ec2_ssm_run_command" {
+  role       = module.iam.ec2_role_name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # SECURITY GROUPS — Inline (staging-specific)
 #
@@ -291,6 +298,17 @@ resource "aws_ssm_parameter" "grafana_password" {
   name  = "/chatwoot/${var.env}/GRAFANA_PASSWORD"
   type  = "SecureString"
   value = "PLACEHOLDER"
+  lifecycle { ignore_changes = [value] }
+  tags = var.tags
+}
+
+# Tag de l'image Docker à déployer — mis à jour par la CI après chaque build.
+# Terraform crée le paramètre avec "latest" mais ne l'écrase jamais ensuite.
+# Rollback : aws ssm put-parameter --name /chatwoot/{env}/DOCKER_IMAGE_TAG --value <tag> --overwrite
+resource "aws_ssm_parameter" "docker_image_tag" {
+  name  = "/chatwoot/${var.env}/DOCKER_IMAGE_TAG"
+  type  = "String"
+  value = "latest"
   lifecycle { ignore_changes = [value] }
   tags = var.tags
 }

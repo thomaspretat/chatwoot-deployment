@@ -243,7 +243,7 @@ resource "aws_db_parameter_group" "this" {
 }
 
 resource "aws_db_instance" "this" {
-  identifier            = "chatwoot-${var.env}"
+  identifier            = "chatwoot_production"
   engine                = "postgres"
   engine_version        = "16"
   instance_class        = var.rds_instance_class
@@ -640,6 +640,17 @@ resource "aws_ssm_parameter" "grafana_password" {
   name  = "/chatwoot/${var.env}/GRAFANA_PASSWORD"
   type  = "SecureString"
   value = "PLACEHOLDER"
+  lifecycle { ignore_changes = [value] }
+  tags = var.tags
+}
+
+# Tag de l'image Docker à déployer — mis à jour par la CI après chaque build.
+# Terraform crée le paramètre avec "latest" mais ne l'écrase jamais ensuite.
+# Rollback : aws ssm put-parameter --name /chatwoot/{env}/DOCKER_IMAGE_TAG --value <tag> --overwrite
+resource "aws_ssm_parameter" "docker_image_tag" {
+  name  = "/chatwoot/${var.env}/DOCKER_IMAGE_TAG"
+  type  = "String"
+  value = "latest"
   lifecycle { ignore_changes = [value] }
   tags = var.tags
 }

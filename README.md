@@ -80,6 +80,99 @@ AWS_DEFAULT_REGION    = eu-west-3
 
 ---
 
+## Deployment Flow
+
+Les deux repos ont des rôles distincts. **Terraform ne tourne jamais pour un déploiement applicatif.**
+
+### Repo `chatwoot` (app) → déploiement d'une nouvelle version
+
+Les étapes 1 et 2 sont communes. La suite diffère selon l'environnement.
+
+```text
+merge → staging (ou main pour prod)
+  │
+  ├── 1. build image Docker
+  │        docker build → registry.gitlab.com/org/chatwoot:$CI_COMMIT_SHORT_SHA
+  │
+  └── 2. push image
+           docker push registry.gitlab.com/org/chatwoot:a3f1c9b
+```
+
+**Production** (ASG + Instance Refresh) :
+
+```text
+  ├── 3. mettre à jour SSM
+  │        aws ssm put-parameter
+  │          --name  /chatwoot/production/DOCKER_IMAGE_TAG
+  │          --value registry.gitlab.com/org/chatwoot:a3f1c9b
+  │          --overwrite
+  │
+  └── 4. ASG Instance Refresh
+           aws autoscaling start-instance-refresh
+             --auto-scaling-group-name chatwoot-production-asg
+             → AWS remplace les instances une par une (zero-downtime)
+             → chaque nouvelle instance boot, lit SSM → docker pull → up
+```
+
+**Staging** (instance EC2 unique + SSM Run Command) :
+
+```text
+  ├── 3. mettre à jour SSM
+  │        aws ssm put-parameter
+  │          --name  /chatwoot/staging/DOCKER_IMAGE_TAG
+  │          --value registry.gitlab.com/org/chatwoot:a3f1c9b
+  │          --overwrite
+  │
+  └── 4. SSM Run Command → instance staging  (pas de SSH, pas d'ASG)
+           aws ssm send-command
+             --instance-ids <app_instance_id>
+             --document-name "AWS-RunShellScript"
+             --parameters commands=[
+               "cd /app/chatwoot",
+               "aws ssm get-parameters-by-path --path /chatwoot/staging/ --with-decryption
+                 --region eu-west-3 --query Parameters[*].[Name,Value] --output text
+                 | while IFS=$'\\t' read -r name value; do
+                     echo \"$(basename $name)=$value\"; done > .env",
+               "chmod 600 .env",
+               "docker compose -f docker-compose-staging.yml pull rails sidekiq",
+               "docker compose -f docker-compose-staging.yml up -d rails sidekiq"
+             ]
+             → seuls rails et sidekiq redémarrent (postgres et redis ne sont pas touchés)
+```
+
+> `app_instance_id` est disponible via `terraform output app_instance_id` (à stocker en variable CI/CD GitLab).
+> Terraform n'intervient pas. L'infra est déjà en place.
+
+### Repo `chatwoot-infra` (infra) → modification de l'infrastructure
+
+```text
+merge → main
+  │
+  ├── 1. terraform fmt + validate
+  ├── 2. terraform plan   → artefact (visible dans la MR)
+  ├── 3. [approbation manuelle pour production]
+  └── 4. terraform apply
+           → mise à jour des ressources AWS modifiées
+           → si le Launch Template change (nouvelle AMI, nouveau profil IAM...)
+             → Instance Refresh automatique ou manuel selon la config
+```
+
+### Rollback applicatif
+
+```bash
+# Revenir à un tag précédent sans Terraform ni redéploiement de code
+aws ssm put-parameter \
+  --name "/chatwoot/production/DOCKER_IMAGE_TAG" \
+  --value "registry.gitlab.com/org/chatwoot:<ancien-tag>" \
+  --overwrite --region eu-west-3
+
+aws autoscaling start-instance-refresh \
+  --auto-scaling-group-name chatwoot-production-asg \
+  --region eu-west-3
+```
+
+---
+
 ## Remote State: S3 + DynamoDB Locking
 
 Terraform state is stored remotely in S3. Concurrent applies are prevented by a DynamoDB lock.
