@@ -157,6 +157,16 @@ merge → main
              → Instance Refresh automatique ou manuel selon la config
 ```
 
+#### Variables CI/CD GitLab — repo `chatwoot-infra`
+
+À configurer dans **Settings → CI/CD → Variables** :
+
+| Variable | Valeur | Masquée |
+| --- | --- | --- |
+| `AWS_ACCESS_KEY_ID` | `terraform output iam_access_key_id` (env production) | non |
+| `AWS_SECRET_ACCESS_KEY` | `terraform output -raw iam_secret_access_key` (env production) | oui |
+| `AWS_DEFAULT_REGION` | `eu-west-3` | non |
+
 ### Rollback applicatif
 
 ```bash
