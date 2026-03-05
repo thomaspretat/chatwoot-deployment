@@ -22,6 +22,55 @@ provider "aws" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# AMI LOOKUPS — Fetch latest Packer-built AMIs automatically
+# ─────────────────────────────────────────────────────────────────────────────
+
+data "aws_ami" "bastion" {
+  most_recent = true
+  owners      = ["self"]
+
+  filter {
+    name   = "name"
+    values = ["bastion-*"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
+
+data "aws_ami" "chatwoot" {
+  most_recent = true
+  owners      = ["self"]
+
+  filter {
+    name   = "name"
+    values = ["chatwoot-*"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
+
+data "aws_ami" "monitoring" {
+  most_recent = true
+  owners      = ["self"]
+
+  filter {
+    name   = "name"
+    values = ["monitoring-*"]
+  }
+
+  filter {
+    name   = "state"
+    values = ["available"]
+  }
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SHARED MODULE — Networking
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -171,7 +220,7 @@ resource "aws_security_group" "app" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_instance" "bastion" {
-  ami                         = var.bastion_ami_id
+  ami                         = data.aws_ami.bastion.id
   instance_type               = var.bastion_instance_type
   key_name                    = var.key_name
   subnet_id                   = module.networking.public_subnet_ids[0]
@@ -201,7 +250,7 @@ resource "aws_eip" "bastion" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_instance" "app" {
-  ami                    = var.app_ami_id
+  ami                    = data.aws_ami.chatwoot.id
   instance_type          = var.app_instance_type
   key_name               = var.key_name
   subnet_id              = module.networking.public_subnet_ids[0]
@@ -225,7 +274,7 @@ resource "aws_instance" "app" {
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_instance" "monitoring" {
-  ami                    = var.monitoring_ami_id
+  ami                    = data.aws_ami.monitoring.id
   instance_type          = var.monitoring_instance_type
   key_name               = var.key_name
   subnet_id              = module.networking.public_subnet_ids[0]

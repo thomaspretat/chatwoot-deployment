@@ -34,11 +34,6 @@ variable "allowed_ssh_cidrs" {
 
 # ── EC2 Bastion ──────────────────────────────────────────────────────────────
 
-variable "bastion_ami_id" {
-  description = "AMI ID for the bastion EC2"
-  type        = string
-}
-
 variable "bastion_instance_type" {
   description = "Instance type for the bastion EC2"
   type        = string
@@ -47,11 +42,6 @@ variable "bastion_instance_type" {
 
 # ── EC2 App (Chatwoot + postgres + redis Docker) ─────────────────────────────
 
-variable "app_ami_id" {
-  description = "AMI ID for the Chatwoot app EC2 (Docker pre-installed)"
-  type        = string
-}
-
 variable "app_instance_type" {
   description = "Instance type for the app EC2"
   type        = string
@@ -59,11 +49,6 @@ variable "app_instance_type" {
 }
 
 # ── EC2 Monitoring (Prometheus + Grafana) ────────────────────────────────────
-
-variable "monitoring_ami_id" {
-  description = "AMI ID for the monitoring EC2 (Docker pre-installed)"
-  type        = string
-}
 
 variable "monitoring_instance_type" {
   description = "Instance type for the monitoring EC2"

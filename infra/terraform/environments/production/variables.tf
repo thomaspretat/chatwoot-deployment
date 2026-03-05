@@ -33,16 +33,6 @@ variable "allowed_ssh_cidrs" {
   type        = list(string)
 }
 
-variable "bastion_ami_id" {
-  description = "AMI ID for the bastion instance"
-  type        = string
-}
-
-variable "app_ami_id" {
-  description = "AMI ID for the application instances"
-  type        = string
-}
-
 variable "bastion_instance_type" {
   description = "Instance type for bastion"
   type        = string
