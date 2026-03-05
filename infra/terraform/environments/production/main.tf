@@ -499,8 +499,6 @@ resource "aws_launch_template" "this" {
     tags          = merge(var.tags, { Name = "chatwoot-${var.env}-app", Role = "chatwoot" })
   }
 
-  user_data = base64encode(file("${path.module}/../../../docker/scripts/chatwoot-start.sh"))
-
   lifecycle {
     create_before_destroy = true
   }

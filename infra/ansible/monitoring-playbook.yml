@@ -35,6 +35,35 @@
       src: ../docker/config/prometheus.yml
       dest: /app/monitoring/prometheus.yml
 
+  - name: Copier le script de démarrage monitoring
+    copy:
+      src: ../docker/scripts/monitoring-start.sh
+      dest: /app/monitoring/monitoring-start.sh
+      mode: '0755'
+
+  - name: Créer le service systemd monitoring
+    copy:
+      dest: /etc/systemd/system/monitoring.service
+      content: |
+        [Unit]
+        Description=Monitoring startup (SSM secrets + Docker Compose)
+        After=network-online.target docker.service
+        Wants=network-online.target docker.service
+
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/app/monitoring/monitoring-start.sh
+
+        [Install]
+        WantedBy=multi-user.target
+
+  - name: Activer le service monitoring
+    systemd_service:
+      name: monitoring
+      enabled: yes
+      daemon_reload: yes
+
   - name: Pré-pull des images monitoring # cache les layers dans l'AMI pour un pull plus rapide lors du script de provisionning
     shell: cd /app/monitoring && docker compose -f docker-compose-monitoring.yml pull
 

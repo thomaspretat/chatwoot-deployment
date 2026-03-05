@@ -215,8 +215,6 @@ resource "aws_instance" "app" {
     delete_on_termination = true
   }
 
-  user_data = base64encode(file("${path.module}/../../../docker/scripts/chatwoot-start.sh"))
-
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-app", Role = "chatwoot" })
 }
 
@@ -240,8 +238,6 @@ resource "aws_instance" "monitoring" {
     encrypted             = true
     delete_on_termination = true
   }
-
-  user_data = base64encode(file("${path.module}/../../../docker/scripts/monitoring-start.sh"))
 
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring" })
 }
