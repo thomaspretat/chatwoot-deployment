@@ -156,6 +156,32 @@ terraform apply
 
 ---
 
+## Backup Policy
+
+### RDS PostgreSQL
+
+| Parameter | Value |
+| --- | --- |
+| Automated backups retention | **14 days** (PITR enabled) |
+| Backup window | `03:00–04:00` UTC |
+| Final snapshot on destroy | enabled (`chatwoot-{env}-final`) |
+| Deletion protection | enabled |
+
+AWS takes a daily snapshot and keeps the last 14. Point-in-Time Recovery (PITR) allows restoring to any second within that window.
+
+### ElastiCache Redis
+
+| Parameter | Value |
+| --- | --- |
+| Snapshot retention | **7 days** |
+| Snapshot window | `04:00–05:00` UTC (after RDS window) |
+
+Redis holds sessions, Sidekiq queues, and application cache — not the source of truth. PostgreSQL is the critical data store; Redis snapshots cover operational recovery only.
+
+> **Long-term archiving:** for compliance or recovery windows beyond 14 days, export RDS snapshots to S3 via AWS Backup (max native retention is 35 days).
+
+---
+
 ## SSM Parameter Store
 
 Secrets and computed endpoints are stored under `/chatwoot/{env}/{VARIABLE_NAME}`.
