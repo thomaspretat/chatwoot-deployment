@@ -18,12 +18,65 @@ terraform/
 │   ├── staging/                # main.tf · variables.tf · terraform.tfvars · outputs.tf
 │   └── production/             # main.tf · variables.tf · terraform.tfvars · outputs.tf
 ├── modules/
-│   └── networking/             # Shared VPC module (used by both environments)
+│   ├── networking/             # Shared VPC module (used by both environments)
+│   └── iam/                    # Shared IAM module (user CI/CD + EC2 role + instance profile)
 └── scripts/
     └── userdata-production.sh  # EC2 boot script: pulls .env from SSM, starts Docker
 ```
 
-Only one shared module exists (`networking`). Everything environment-specific is inlined directly in the environment's `main.tf`.
+Two shared modules exist: `networking` (VPC) and `iam` (users + EC2 role). Everything environment-specific is inlined directly in the environment's `main.tf`.
+
+---
+
+## IAM
+
+### Module `modules/iam`
+
+Créé et appelé par chaque environnement. Gère trois responsabilités :
+
+| Ressource | Nom | Rôle |
+| --- | --- | --- |
+| `aws_iam_user` | `chatwoot-{env}` | User programmatique pour Terraform local et CI/CD GitLab |
+| `aws_iam_access_key` | — | Clé d'accès associée au user |
+| `aws_iam_role` | `chatwoot-{env}-ec2-role` | Rôle assumé par les instances EC2 au démarrage |
+| `aws_iam_instance_profile` | `chatwoot-{env}-ec2-profile` | Attaché au Launch Template / `aws_instance` |
+
+Le user reçoit la policy `AdministratorAccess` (droits Terraform complets sur le compte AWS).
+
+Le rôle EC2 reçoit :
+
+- `AmazonSSMReadOnlyAccess` — lecture des paramètres SSM au boot (les deux envs)
+- Policy inline S3 R/W sur le bucket Chatwoot — production uniquement (`s3_bucket_arn` non vide)
+
+### Récupérer les credentials après le premier apply
+
+```bash
+# Access Key ID (non sensible)
+terraform output iam_access_key_id
+
+# Secret Access Key (sensible — affiché en clair une seule fois)
+terraform output -raw iam_secret_access_key
+```
+
+Configurer ensuite dans AWS CLI :
+
+```bash
+aws configure --profile chatwoot-production
+# AWS Access Key ID: <iam_access_key_id>
+# AWS Secret Access Key: <iam_secret_access_key>
+# Default region: eu-west-3
+```
+
+Et dans les variables CI/CD GitLab du repo infra :
+
+```text
+AWS_ACCESS_KEY_ID     = <iam_access_key_id>
+AWS_SECRET_ACCESS_KEY = <iam_secret_access_key>
+AWS_DEFAULT_REGION    = eu-west-3
+```
+
+> **Note :** le Secret Access Key est stocké dans le state Terraform (S3 chiffré).
+> Il n'est **pas** re-affichable via AWS Console après création — seul le state en garde la trace.
 
 ---
 
