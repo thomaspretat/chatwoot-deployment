@@ -151,12 +151,6 @@
         port: "9100"
         proto: tcp
 
-    - name: Autoriser le port 9394 (prometheus-exporter Rails/Sidekiq)
-      ufw:
-        rule: allow
-        port: "9394"
-        proto: tcp
-
     - name: Activer UFW
       ufw:
         state: enabled

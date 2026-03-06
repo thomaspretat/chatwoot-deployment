@@ -15,12 +15,3 @@ scrape_configs:
         filters:
           - name: "tag:Role"
             values: ["chatwoot"]
-
-  # prometheus_exporter collector sur les instances chatwoot (métriques Rails + Sidekiq)
-  - job_name: 'chatwoot-app'
-    ec2_sd_configs:
-      - region: eu-west-3
-        port: 9394
-        filters:
-          - name: "tag:Role"
-            values: ["chatwoot"]
