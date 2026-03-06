@@ -398,6 +398,14 @@ resource "aws_ssm_parameter" "postgres_db" {
   tags  = var.tags
 }
 
+# Staging : stockage local (pas de S3)
+resource "aws_ssm_parameter" "active_storage_service" {
+  name  = "/chatwoot/${var.env}/ACTIVE_STORAGE_SERVICE"
+  type  = "String"
+  value = "local"
+  tags  = var.tags
+}
+
 # Staging : pas de certificat SSL, on désactive le force_ssl de Rails
 resource "aws_ssm_parameter" "force_ssl" {
   name  = "/chatwoot/${var.env}/FORCE_SSL"
