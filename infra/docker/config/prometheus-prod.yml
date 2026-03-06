@@ -15,3 +15,16 @@ scrape_configs:
         filters:
           - name: "tag:Role"
             values: ["chatwoot"]
+          - name: "tag:Environment"
+            values: ["production"]
+
+  # redis-exporter sur les instances chatwoot (métriques Redis/ElastiCache)
+  - job_name: 'chatwoot-redis'
+    ec2_sd_configs:
+      - region: eu-west-3
+        port: 9121
+        filters:
+          - name: "tag:Role"
+            values: ["chatwoot"]
+          - name: "tag:Environment"
+            values: ["production"]

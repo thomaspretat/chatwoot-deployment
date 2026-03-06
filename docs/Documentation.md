@@ -31,10 +31,10 @@ ALB ENDPOINT (Load Balancer géré par AWS) -> Dispatch entre deux zones de disp
 
 **Zone A:**
 
-- PUBLIC SUBNET (ALB Node, NAT Gateway et Bastion pour gestion des instances)
+- PUBLIC SUBNET (ALB Node, NAT Gateway, Bastion avec Elastic IP)
 - PRIVATE SUBNET APPLICATIVES
   - AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs)
-  - EC2 Monitoring
+  - EC2 Monitoring (Prometheus + Grafana, hors ASG)
 - PRIVATE SUBNET DATABASES (RDS et ElastiCache "primaire", la ou se trouve les chemins principaux)
 
 **Zone B:**
@@ -44,6 +44,8 @@ ALB ENDPOINT (Load Balancer géré par AWS) -> Dispatch entre deux zones de disp
   - AUTO SCALING GROUP (EC2 avec Docker Compose applicatifs)
 - PRIVATE SUBNET DATABASES (RDS et ElastiCache "backup")
 
+Le bastion est dans la Zone A uniquement — un seul suffit car il peut SSH vers les instances des deux AZ au sein du même VPC.
+
 **S3 Bucket** -> Les datas pour l'application ("Pièces jointes et autres fichiers à stocker")
 
 ### 2.2 Environnement Staging
@@ -51,8 +53,9 @@ ALB ENDPOINT (Load Balancer géré par AWS) -> Dispatch entre deux zones de disp
 Le Staging se trouve dans un VPC séparé pour simplifier a la fois l'architecture et par soucis d'isolation:
 
 - **1 VPC** dédié avec un subnet public dans une seule AZ
-- **1 EC2 (port 3000)** avec Docker Compose complet y compris cette fois les BDD.
-- **1 EC2 (port 9090)** avec Prometheus + Grafana pour le monitoring.
+- **1 Bastion** (point d'entrée SSH, port 2022)
+- **1 EC2 App (port 3000)** avec Docker Compose complet y compris cette fois les BDD (Postgres + Redis en containers)
+- **1 EC2 Monitoring (port 9090)** avec Prometheus + Grafana
 - Internet Gateway + DNS avec un sous domaine spécifié pour staging accessible que par les membres de l'entreprise
 
 
@@ -98,7 +101,7 @@ L'architecture doit supporter le scaling automatique de l'application Chatwoot. 
 **Conséquences** :
 - Chaque EC2 exécute un Docker Compose identique
 - L'AMI est pré-construite avec Docker, Docker Compose, aws-cli, et tout les outils (ou futurs outils apres update de l'AMI) nécessaires.
-- Le User Data script clone la configuration depuis GitLab et tire les secrets depuis SSM Parameter Store (AWS Secrets Manager étant un cout additionnels non nécessaire pour nous)
+- Le script de démarrage (`chatwoot-start.sh`) détecte l'environnement via les tags EC2, récupère les secrets depuis SSM Parameter Store et lance Docker Compose. SSM Parameter Store est l'alternative gratuite à AWS Secrets Manager, suffisante pour notre besoin (pas de rotation automatique nécessaire).
 - Le scaling se fait en ajoutant/retirant des instances EC2 entièrement.
 
 ### Gérer Terraform sur deux VPC
@@ -110,30 +113,23 @@ Nous avons deux environnements sur deux VPC disctint (Production et Staging) qui
 **Structure** :
 
 ```
-terraform/
-    bootstrap/
-        main.tf
-        variables.tf
-        outputs.tf
-    environments/
-        production/
-            .... .tf
-        staging/
-            .... .tf
-    modules/
-        acm/
-        alb/
-        asg/
-        ...
-    scripts/
-        user-data.sh    # Notre script bash pour le provisionning
-    backend.tf          # Mettre notre state sur un S3 Bucket pour facilité le versionning
-    versions.tf         # Provider AWS
+infra/
+    terraform/
+        bootstrap/          # Setup initial S3 + DynamoDB pour le remote state
+        environments/
+            production/     # main.tf · variables.tf · terraform.tfvars · outputs.tf
+            staging/        # main.tf · variables.tf · terraform.tfvars · outputs.tf
+        modules/
+            networking/     # VPC, subnets, IGW, NAT GW, route tables
+            iam/            # User CI/CD + EC2 role (SSM + S3) + instance profile
+    packer/                 # AMIs : bastion, chatwoot, monitoring
+    ansible/                # Playbooks de provisioning pour chaque AMI
+    docker/                 # Docker Compose files, configs Prometheus, scripts de démarrage
 ```
 
 **Conséquences** :
 - Les tfstate files sont complètement isolés chacun dans leurs dossier prod/staging
-- Les modules sont versionnés et testés de manière isolé
+- Les modules sont versionnés et testés de manière isolée
 - Le staging n'affecte pas la prod en cas de changement
 
 
@@ -187,20 +183,28 @@ Administrateur -> SSH sur port custom via private key
 
 ## 6. Flux de déploiement (CI/CD)
 
-A DEFINIR
+Voir la section "Deployment Flow" dans le [README principal](../README.md) pour le détail complet.
+
+En résumé :
+- **Production** : Build Docker → push registry → update SSM `DOCKER_IMAGE_TAG` → ASG Instance Refresh (rolling update zero-downtime)
+- **Staging** : Build Docker → push registry → update SSM `DOCKER_IMAGE_TAG` → SSM Run Command sur l'instance (re-pull + restart rails/sidekiq)
+
+Terraform n'intervient jamais pour un déploiement applicatif.
 
 
 ## 7. Sécurité
 
 ### 7.1 Security Groups
 
-- sg-alb (80,443) <- 0.0.0.0/0
-- sg-bastion (22) <- IP Admin
+- sg-alb (80, 443) <- 0.0.0.0/0
+- sg-bastion (2022) <- IP Admin
 - sg-app (3000) <- sg-alb
-- sg-app (22) <- sg-bastion
+- sg-app (2022) <- sg-bastion
+- sg-app (9100, 9121) <- sg-monitoring (scraping node-exporter et redis-exporter)
 - sg-rds (5432) <- sg-app
 - sg-redis (6379) <- sg-app
-- sg-monitoring (9090, 3000) <- sg-bastion, sg-app
+- sg-monitoring (2022) <- sg-bastion
+- sg-monitoring (9090, 3000) <- IP Admin
 
 ### 7.2 Secrets
 
@@ -211,16 +215,19 @@ A noter que nos EC2 accèderont à ces secrets via IAM Role.
 
 ## 8. Monitoring
 
-- **Prometheus** : scrape des métriques Rails (`/metrics`), Sidekiq, Node Exporter sur chaque EC2
+- **Prometheus** : scrape des métriques via node-exporter (CPU, RAM, disque, réseau) et redis-exporter (connexions, mémoire, commandes/s) sur chaque EC2 applicative. Découverte automatique des instances via EC2 service discovery (filtre par tags `Role` et `Environment`).
 - **Grafana** : dashboards applicatifs (profondeur des queues Sidekiq pourrait être utile) et infrastructure (CPU, RAM, réseaux etc...)
-- **CloudWatch** : métriques de nos différents composants ASG, ALB, RDS et ElastiCache
+- **CloudWatch** : métriques de nos différents composants ASG, ALB, RDS et ElastiCache. Utilisé aussi pour les politiques d'auto-scaling (CPU > 75% scale up, CPU < 25% scale down).
 - **Alertes** : A configurer pour avoir les différentes erreurs en temps réel sur des metrics cibles à définir.
+
+Deux configs Prometheus séparées (`prometheus-prod.yml` / `prometheus-staging.yml`) pour que chaque instance monitoring ne scrape que son propre environnement.
 
 
 
 ## 9. Sauvegarde
 
-- **RDS/Elasticache** : snapshots automatiques quotidiens, dispo selon Free tier. Manuel vers S3 si besoin dans le futur.
+- **RDS PostgreSQL** : snapshots automatiques, rétention de 14 jours, PITR (Point-in-Time Recovery) activé, fenêtre de backup 03:00–04:00 UTC, deletion protection activée.
+- **ElastiCache Redis** : snapshots automatiques, rétention de 5 jours, failover automatique en Multi-AZ.
 - **S3** : versionning activé sur le bucket de stockage
 - **Configuration** : tout "l'infrastructure as code" sera versionné dans GitLab directement dans notre ce repo chatwoot-infra
 

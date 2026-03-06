@@ -28,9 +28,9 @@ output "s3_bucket_name" {
   value       = aws_s3_bucket.chatwoot.bucket
 }
 
-output "bastion_public_ips" {
-  description = "Public IPs of the bastions (AZ-a and AZ-b)"
-  value       = aws_eip.bastion[*].public_ip
+output "bastion_public_ip" {
+  description = "Public IP of the bastion"
+  value       = aws_eip.bastion.public_ip
 }
 
 output "asg_name" {

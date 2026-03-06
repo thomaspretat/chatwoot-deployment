@@ -170,6 +170,22 @@ resource "aws_security_group" "ec2" {
     security_groups = [aws_security_group.bastion.id]
   }
 
+  # node-exporter scraping from monitoring instance
+  ingress {
+    from_port       = 9100
+    to_port         = 9100
+    protocol        = "tcp"
+    security_groups = [aws_security_group.monitoring.id]
+  }
+
+  # redis-exporter scraping from monitoring instance
+  ingress {
+    from_port       = 9121
+    to_port         = 9121
+    protocol        = "tcp"
+    security_groups = [aws_security_group.monitoring.id]
+  }
+
   # Full egress: Docker image pull, Secrets Manager (HTTPS), S3, SSM
   egress {
     from_port   = 0
@@ -437,16 +453,15 @@ resource "aws_lb_listener" "http_redirect" {
 # }
 
 # ─────────────────────────────────────────────────────────────────────────────
-# BASTIONS — 2 instances (1 par AZ) with Elastic IP
+# BASTION — Single SSH entry point (can reach both AZs within the VPC)
 # ProxyJump : ssh -J ubuntu@<bastion_ip> ubuntu@<ec2_private_ip>
 # ─────────────────────────────────────────────────────────────────────────────
 
 resource "aws_instance" "bastion" {
-  count                       = 2
   ami                         = data.aws_ami.bastion.id
   instance_type               = var.bastion_instance_type
   key_name                    = var.key_name
-  subnet_id                   = module.networking.public_subnet_ids[count.index]
+  subnet_id                   = module.networking.public_subnet_ids[0]
   vpc_security_group_ids      = [aws_security_group.bastion.id]
   associate_public_ip_address = true
 
@@ -457,14 +472,13 @@ resource "aws_instance" "bastion" {
     delete_on_termination = true
   }
 
-  tags = merge(var.tags, { Name = "chatwoot-${var.env}-bastion-${count.index + 1}" })
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-bastion" })
 }
 
 resource "aws_eip" "bastion" {
-  count    = 2
-  instance = aws_instance.bastion[count.index].id
+  instance = aws_instance.bastion.id
   domain   = "vpc"
-  tags     = merge(var.tags, { Name = "chatwoot-${var.env}-bastion-eip-${count.index + 1}" })
+  tags     = merge(var.tags, { Name = "chatwoot-${var.env}-bastion-eip" })
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -590,6 +604,70 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
+# MONITORING — Single instance in AZ-a (outside ASG)
+# Prometheus (metrics collection) + Grafana (dashboards).
+# Scrapes app instances via node_exporter (port 9100) and redis_exporter (port 9121).
+# ─────────────────────────────────────────────────────────────────────────────
+
+resource "aws_security_group" "monitoring" {
+  name        = "chatwoot-${var.env}-monitoring-sg"
+  description = "Prometheus + Grafana — accessible from Bastion (SSH) and scrapes EC2"
+  vpc_id      = module.networking.vpc_id
+
+  # Grafana (from allowed_ssh_cidrs for dashboard access)
+  ingress {
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_ssh_cidrs
+  }
+
+  # Prometheus (from allowed_ssh_cidrs for direct access)
+  ingress {
+    from_port   = 9090
+    to_port     = 9090
+    protocol    = "tcp"
+    cidr_blocks = var.allowed_ssh_cidrs
+  }
+
+  # SSH from bastion only
+  ingress {
+    from_port       = 2022
+    to_port         = 2022
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
+  # Full egress: Docker pulls, SSM, scraping app instances
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring-sg" })
+}
+
+resource "aws_instance" "monitoring" {
+  ami                    = data.aws_ami.monitoring.id
+  instance_type          = "t3.micro"
+  key_name               = var.key_name
+  subnet_id              = module.networking.private_subnet_ids[0]
+  vpc_security_group_ids = [aws_security_group.monitoring.id]
+  iam_instance_profile   = module.iam.instance_profile_name
+
+  root_block_device {
+    volume_type           = "gp3"
+    volume_size           = 20
+    encrypted             = true
+    delete_on_termination = true
+  }
+
+  tags = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring", Role = "monitoring" })
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SSM PARAMETER STORE — Inline (production-specific)
 #
 # Convention: /chatwoot/{env}/{VARIABLE_NAME}
@@ -672,6 +750,17 @@ resource "aws_ssm_parameter" "redis_url" {
   name  = "/chatwoot/${var.env}/REDIS_URL"
   type  = "String"
   value = "rediss://${aws_elasticache_replication_group.this.primary_endpoint_address}:6379/0"
+  tags  = var.tags
+}
+
+# REDIS_ADDR est utilisé par le redis-exporter (oliver006/redis_exporter).
+# Même endpoint que REDIS_URL mais sans le suffixe /0 (numéro de DB Redis),
+# car le redis-exporter ne supporte pas ce format.
+# Doc : https://github.com/oliver006/redis_exporter
+resource "aws_ssm_parameter" "redis_addr" {
+  name  = "/chatwoot/${var.env}/REDIS_ADDR"
+  type  = "String"
+  value = "rediss://${aws_elasticache_replication_group.this.primary_endpoint_address}:6379"
   tags  = var.tags
 }
 

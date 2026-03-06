@@ -25,6 +25,9 @@ GRAFANA_PASSWORD=$(aws ssm get-parameter \
 echo "GRAFANA_PASSWORD=${GRAFANA_PASSWORD}" > "/app/monitoring/.env"
 chmod 600 "/app/monitoring/.env"
 
+# Sélectionner la config Prometheus selon l'environnement
+cp "/app/monitoring/prometheus-${SSM_ENV}.yml" "/app/monitoring/prometheus.yml"
+
 # Lancer les containers
 cd "/app/monitoring"
 docker compose -f docker-compose-monitoring.yml pull

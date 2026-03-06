@@ -1,30 +1,107 @@
 # Chatwoot Infrastructure
 
-Terraform infrastructure for Chatwoot (Rails) on AWS — `eu-west-3` (Paris).
+Terraform + Packer + Ansible infrastructure for Chatwoot (Rails) on AWS — `eu-west-3` (Paris).
 
 ## Environments
 
 | Environment | Architecture |
 | --- | --- |
-| `staging` | 1 public subnet · Bastion + App EC2 + Monitoring EC2 |
-| `production` | 2 AZs · ALB · ASG · RDS PostgreSQL 16 · Elasticache Redis 7 · S3 |
+| `staging` | 1 AZ · 1 public subnet · Bastion + App EC2 (DB in Docker) + Monitoring EC2 |
+| `production` | 2 AZs · ALB · ASG · Bastion · Monitoring EC2 · RDS PostgreSQL 16 · ElastiCache Redis 7 · S3 |
 
 ## Repository Structure
 
 ```text
-terraform/
-├── bootstrap/                  # One-time setup: S3 bucket + DynamoDB table
-├── environments/
-│   ├── staging/                # main.tf · variables.tf · terraform.tfvars · outputs.tf
-│   └── production/             # main.tf · variables.tf · terraform.tfvars · outputs.tf
-├── modules/
-│   ├── networking/             # Shared VPC module (used by both environments)
-│   └── iam/                    # Shared IAM module (user CI/CD + EC2 role + instance profile)
-└── scripts/
-    └── userdata-production.sh  # EC2 boot script: pulls .env from SSM, starts Docker
+infra/
+├── packer/
+│   ├── common.pkr.hcl             # Plugins + Ubuntu 24.04 data source (shared)
+│   ├── bastion.pkr.hcl            # AMI bastion (SSH hardening only)
+│   ├── chatwoot.pkr.hcl           # AMI app (Docker + compose + start script)
+│   └── monitoring.pkr.hcl         # AMI monitoring (Docker + Prometheus/Grafana)
+│
+├── ansible/
+│   ├── bastion-playbook.yml       # fail2ban, UFW, SSH port 2022
+│   ├── chatwoot-playbook.yml      # Docker, AWS CLI, compose files, systemd service
+│   └── monitoring-playbook.yml    # Docker, AWS CLI, compose + prometheus configs, systemd service
+│
+├── docker/
+│   ├── docker-compose-prod.yml    # Rails + Sidekiq + node-exporter + redis-exporter
+│   ├── docker-compose-staging.yml # Rails + Sidekiq + Postgres + Redis + nginx + node-exporter + redis-exporter
+│   ├── docker-compose-monitoring.yml  # Prometheus + Grafana + node-exporter
+│   ├── config/
+│   │   ├── prometheus-prod.yml    # Scrape config filtered by Environment=production
+│   │   ├── prometheus-staging.yml # Scrape config filtered by Environment=staging
+│   │   └── nginx.conf             # Reverse proxy for staging (port 80 → Rails 3000)
+│   └── scripts/
+│       ├── chatwoot-start.sh      # Boot script: detect env, fetch SSM → .env, docker compose up
+│       └── monitoring-start.sh    # Boot script: fetch Grafana password, select prometheus config, docker compose up
+│
+└── terraform/
+    ├── bootstrap/                 # One-time setup: S3 bucket + DynamoDB table for remote state
+    ├── environments/
+    │   ├── staging/               # main.tf · variables.tf · terraform.tfvars · outputs.tf
+    │   └── production/            # main.tf · variables.tf · terraform.tfvars · outputs.tf
+    └── modules/
+        ├── networking/            # VPC, subnets, IGW, NAT GW, route tables
+        └── iam/                   # IAM user (CI/CD) + EC2 role (SSM + S3) + instance profile
 ```
 
-Two shared modules exist: `networking` (VPC) and `iam` (users + EC2 role). Everything environment-specific is inlined directly in the environment's `main.tf`.
+Two shared Terraform modules: `networking` (VPC) and `iam` (users + EC2 role). Everything environment-specific is inlined in the environment's `main.tf`.
+
+---
+
+## Packer / Ansible — AMI Build
+
+Packer builds 3 AMIs from Ubuntu 24.04, provisioned by Ansible :
+
+| AMI | Packer file | Ansible playbook | Installs |
+| --- | --- | --- | --- |
+| `bastion-{timestamp}` | `bastion.pkr.hcl` | `bastion-playbook.yml` | fail2ban, UFW, SSH hardening (port 2022) |
+| `chatwoot-{timestamp}` | `chatwoot.pkr.hcl` | `chatwoot-playbook.yml` | Docker, AWS CLI, compose files, systemd service, pre-pulled images |
+| `monitoring-{timestamp}` | `monitoring.pkr.hcl` | `monitoring-playbook.yml` | Docker, AWS CLI, compose + prometheus configs, systemd service |
+
+Each AMI is shared between prod and staging. The differentiation happens at boot via EC2 tags.
+
+Terraform uses `data "aws_ami"` to automatically fetch the latest AMI by name prefix — no hardcoded AMI IDs.
+
+```bash
+# Build an AMI
+cd infra/packer
+packer init .
+packer build bastion.pkr.hcl
+```
+
+---
+
+## Monitoring — Prometheus + Grafana
+
+### Architecture
+
+The monitoring instance runs 3 containers :
+
+- **Prometheus** (`:9090`) — scrapes metrics every 15s and stores them as time-series
+- **Grafana** (`:3000`) — dashboards, connects to Prometheus as data source
+- **node-exporter** (`:9100`) — exposes host metrics (CPU, RAM, disk) of the monitoring instance itself
+
+### What gets scraped
+
+On each app instance (prod and staging), two exporters run alongside the application :
+
+- **node-exporter** (`:9100`) — host metrics (CPU, RAM, disk, network)
+- **redis-exporter** (`:9121`) — Redis/ElastiCache metrics (connections, memory, commands/s)
+
+Prometheus discovers app instances automatically via **EC2 service discovery** (`ec2_sd_configs`). It calls the AWS API `DescribeInstances`, filters by tags (`Role=chatwoot` + `Environment=production|staging`), and scrapes their private IPs. No hardcoded IPs — new ASG instances are discovered automatically.
+
+Two separate Prometheus configs exist (`prometheus-prod.yml` / `prometheus-staging.yml`) to ensure each monitoring instance only scrapes its own environment. The correct config is selected at boot by `monitoring-start.sh`.
+
+### Access
+
+Monitoring is in a private subnet (prod). Access Grafana via SSH tunnel through the bastion :
+
+```bash
+ssh -J ubuntu@<bastion_ip>:2022 -L 3000:<monitoring_private_ip>:3000 ubuntu@<monitoring_private_ip> -p 2022
+# Then open http://localhost:3000
+```
 
 ---
 
@@ -32,148 +109,75 @@ Two shared modules exist: `networking` (VPC) and `iam` (users + EC2 role). Every
 
 ### Module `modules/iam`
 
-Créé et appelé par chaque environnement. Gère trois responsabilités :
-
-| Ressource | Nom | Rôle |
+| Resource | Name | Purpose |
 | --- | --- | --- |
-| `aws_iam_user` | `chatwoot-{env}` | User programmatique pour Terraform local et CI/CD GitLab |
-| `aws_iam_access_key` | — | Clé d'accès associée au user |
-| `aws_iam_role` | `chatwoot-{env}-ec2-role` | Rôle assumé par les instances EC2 au démarrage |
-| `aws_iam_instance_profile` | `chatwoot-{env}-ec2-profile` | Attaché au Launch Template / `aws_instance` |
+| `aws_iam_user` | `chatwoot-{env}` | Programmatic user for Terraform and CI/CD |
+| `aws_iam_role` | `chatwoot-{env}-ec2-role` | Role assumed by EC2 instances at boot |
+| `aws_iam_instance_profile` | `chatwoot-{env}-ec2-profile` | Attached to Launch Template / `aws_instance` |
 
-Le user reçoit la policy `AdministratorAccess` (droits Terraform complets sur le compte AWS).
+The EC2 role has :
 
-Le rôle EC2 reçoit :
+- `AmazonSSMReadOnlyAccess` — read SSM parameters at boot
+- `ec2:DescribeTags` — detect environment from instance tags
+- S3 R/W policy on the Chatwoot bucket — production only
 
-- `AmazonSSMReadOnlyAccess` — lecture des paramètres SSM au boot (les deux envs)
-- Policy inline S3 R/W sur le bucket Chatwoot — production uniquement (`s3_bucket_arn` non vide)
-
-### Récupérer les credentials après le premier apply
+### Retrieve credentials after first apply
 
 ```bash
-# Access Key ID (non sensible)
 terraform output iam_access_key_id
-
-# Secret Access Key (sensible — affiché en clair une seule fois)
 terraform output -raw iam_secret_access_key
 ```
-
-Configurer ensuite dans AWS CLI :
-
-```bash
-aws configure --profile chatwoot-production
-# AWS Access Key ID: <iam_access_key_id>
-# AWS Secret Access Key: <iam_secret_access_key>
-# Default region: eu-west-3
-```
-
-Et dans les variables CI/CD GitLab du repo infra :
-
-```text
-AWS_ACCESS_KEY_ID     = <iam_access_key_id>
-AWS_SECRET_ACCESS_KEY = <iam_secret_access_key>
-AWS_DEFAULT_REGION    = eu-west-3
-```
-
-> **Note :** le Secret Access Key est stocké dans le state Terraform (S3 chiffré).
-> Il n'est **pas** re-affichable via AWS Console après création — seul le state en garde la trace.
 
 ---
 
 ## Deployment Flow
 
-Les deux repos ont des rôles distincts. **Terraform ne tourne jamais pour un déploiement applicatif.**
+Terraform never runs for app deployments. Two repos, two responsibilities.
 
-### Repo `chatwoot` (app) → déploiement d'une nouvelle version
+### Repo `chatwoot` (app) — deploy a new version
 
-Les étapes 1 et 2 sont communes. La suite diffère selon l'environnement.
+Steps 1–2 are common, then it diverges per environment.
 
 ```text
-merge → staging (ou main pour prod)
+merge → staging (or main for prod)
   │
-  ├── 1. build image Docker
-  │        docker build → registry.gitlab.com/org/chatwoot:$CI_COMMIT_SHORT_SHA
-  │
-  └── 2. push image
-           docker push registry.gitlab.com/org/chatwoot:a3f1c9b
+  ├── 1. docker build → registry.gitlab.com/org/chatwoot:$CI_COMMIT_SHORT_SHA
+  └── 2. docker push
 ```
 
 **Production** (ASG + Instance Refresh) :
 
 ```text
-  ├── 3. mettre à jour SSM
-  │        aws ssm put-parameter
-  │          --name  /chatwoot/production/DOCKER_IMAGE_TAG
-  │          --value registry.gitlab.com/org/chatwoot:a3f1c9b
-  │          --overwrite
-  │
-  └── 4. ASG Instance Refresh
-           aws autoscaling start-instance-refresh
-             --auto-scaling-group-name chatwoot-production-asg
-             → AWS remplace les instances une par une (zero-downtime)
-             → chaque nouvelle instance boot, lit SSM → docker pull → up
+  ├── 3. aws ssm put-parameter --name /chatwoot/production/DOCKER_IMAGE_TAG --value <tag> --overwrite
+  └── 4. aws autoscaling start-instance-refresh --auto-scaling-group-name chatwoot-production-asg
+         → AWS replaces instances one by one (zero-downtime)
+         → each new instance boots, reads SSM → docker pull → up
 ```
 
-**Staging** (instance EC2 unique + SSM Run Command) :
+**Staging** (single EC2 + SSM Run Command) :
 
 ```text
-  ├── 3. mettre à jour SSM
-  │        aws ssm put-parameter
-  │          --name  /chatwoot/staging/DOCKER_IMAGE_TAG
-  │          --value registry.gitlab.com/org/chatwoot:a3f1c9b
-  │          --overwrite
-  │
-  └── 4. SSM Run Command → instance staging  (pas de SSH, pas d'ASG)
-           aws ssm send-command
-             --instance-ids <app_instance_id>
-             --document-name "AWS-RunShellScript"
-             --parameters commands=[
-               "cd /app/chatwoot",
-               "aws ssm get-parameters-by-path --path /chatwoot/staging/ --with-decryption
-                 --region eu-west-3 --query Parameters[*].[Name,Value] --output text
-                 | while IFS=$'\\t' read -r name value; do
-                     echo \"$(basename $name)=$value\"; done > .env",
-               "chmod 600 .env",
-               "docker compose -f docker-compose-staging.yml pull rails sidekiq",
-               "docker compose -f docker-compose-staging.yml up -d rails sidekiq"
-             ]
-             → seuls rails et sidekiq redémarrent (postgres et redis ne sont pas touchés)
+  ├── 3. aws ssm put-parameter --name /chatwoot/staging/DOCKER_IMAGE_TAG --value <tag> --overwrite
+  └── 4. aws ssm send-command --instance-ids <app_instance_id> --document-name "AWS-RunShellScript"
+         → re-generates .env from SSM, pulls new image, restarts rails + sidekiq
 ```
 
-> `app_instance_id` est disponible via `terraform output app_instance_id` (à stocker en variable CI/CD GitLab).
-> Terraform n'intervient pas. L'infra est déjà en place.
-
-### Repo `chatwoot-infra` (infra) → modification de l'infrastructure
+### Repo `chatwoot-infra` (infra) — modify infrastructure
 
 ```text
 merge → main
-  │
   ├── 1. terraform fmt + validate
-  ├── 2. terraform plan   → artefact (visible dans la MR)
-  ├── 3. [approbation manuelle pour production]
+  ├── 2. terraform plan
+  ├── 3. [manual approval for production]
   └── 4. terraform apply
-           → mise à jour des ressources AWS modifiées
-           → si le Launch Template change (nouvelle AMI, nouveau profil IAM...)
-             → Instance Refresh automatique ou manuel selon la config
 ```
 
-#### Variables CI/CD GitLab — repo `chatwoot-infra`
-
-À configurer dans **Settings → CI/CD → Variables** :
-
-| Variable | Valeur | Masquée |
-| --- | --- | --- |
-| `AWS_ACCESS_KEY_ID` | `terraform output iam_access_key_id` (env production) | non |
-| `AWS_SECRET_ACCESS_KEY` | `terraform output -raw iam_secret_access_key` (env production) | oui |
-| `AWS_DEFAULT_REGION` | `eu-west-3` | non |
-
-### Rollback applicatif
+### Rollback
 
 ```bash
-# Revenir à un tag précédent sans Terraform ni redéploiement de code
 aws ssm put-parameter \
   --name "/chatwoot/production/DOCKER_IMAGE_TAG" \
-  --value "registry.gitlab.com/org/chatwoot:<ancien-tag>" \
+  --value "registry.gitlab.com/org/chatwoot:<old-tag>" \
   --overwrite --region eu-west-3
 
 aws autoscaling start-instance-refresh \
@@ -183,78 +187,80 @@ aws autoscaling start-instance-refresh \
 
 ---
 
-## Remote State: S3 + DynamoDB Locking
+## SSM Parameter Store
 
-Terraform state is stored remotely in S3. Concurrent applies are prevented by a DynamoDB lock.
+Secrets and computed endpoints are stored under `/chatwoot/{env}/{VARIABLE_NAME}`.
 
-### How it works
+`SecureString` parameters are created with a `PLACEHOLDER` value by Terraform and never overwritten on subsequent applies (`lifecycle { ignore_changes = [value] }`). Set real values once after first apply :
 
-```text
-terraform apply
-  │
-  ├── 1. DynamoDB  →  PutItem LockID (conditional write)
-  │        ├── attribute_not_exists → lock acquired ✅
-  │        └── key already exists  → STOP: "state is locked" ❌
-  │
-  ├── 2. S3        →  download terraform.tfstate
-  │
-  ├── 3.           →  compute plan (diff state vs real AWS)
-  │
-  ├── 4.           →  apply changes on AWS
-  │
-  ├── 5. S3        →  upload new terraform.tfstate
-  │
-  └── 6. DynamoDB  →  DeleteItem LockID (release lock)
+```bash
+aws ssm put-parameter \
+  --name "/chatwoot/production/SECRET_KEY_BASE" \
+  --value "$(openssl rand -hex 64)" \
+  --type "SecureString" --overwrite --region eu-west-3
 ```
 
-The DynamoDB table is **empty at rest**. A record present means a lock is held.
-The conditional write (`attribute_not_exists`) is atomic — no race condition possible.
+`String` parameters (RDS endpoint, Redis URL, S3 bucket name, etc.) are populated automatically by Terraform.
 
-Each environment locks independently (the lock key is the S3 path of the state file),
-so a staging apply never blocks a production apply.
+At boot, each EC2 instance fetches all parameters in a single API call via `chatwoot-start.sh` :
 
-### Resources
+```bash
+aws ssm get-parameters-by-path \
+  --path "/chatwoot/$SSM_ENV/" \
+  --with-decryption --region eu-west-3 \
+  --query "Parameters[*].[Name,Value]" --output text \
+  | while IFS=$'\t' read -r name value; do
+      echo "$(basename "$name")=$value"
+    done > /app/chatwoot/.env
+```
+
+---
+
+## Remote State: S3 + DynamoDB Locking
+
+Terraform state is stored in S3. Concurrent applies are prevented by a DynamoDB lock.
 
 | Resource | Purpose |
 | --- | --- |
 | S3 bucket `chatwoot-terraform-state` | Stores `.tfstate` files for all environments |
 | DynamoDB table `chatwoot-terraform-locks` | Holds the lock during an active apply |
 
-### If a lock is stuck (interrupted apply)
+Each environment locks independently (the lock key is the S3 path), so staging never blocks production.
 
 ```bash
+# If a lock is stuck (interrupted apply)
 terraform force-unlock <LOCK_ID>
-```
-
-Or manually via AWS CLI:
-
-```bash
-aws dynamodb delete-item \
-  --table-name chatwoot-terraform-locks \
-  --key '{"LockID": {"S": "chatwoot-terraform-state/environments/production/terraform.tfstate"}}' \
-  --region eu-west-3
 ```
 
 ---
 
 ## First-Time Setup
 
-Bootstrap must run **before** any environment, as it creates the S3 bucket used as backend.
+Bootstrap must run **before** any environment.
 
 ```bash
-# 1. Create the S3 bucket and DynamoDB table (local state)
-cd terraform/bootstrap
-terraform init
-terraform apply
+# 1. Create S3 bucket + DynamoDB table (local state)
+cd infra/terraform/bootstrap
+terraform init && terraform apply
 
-# 2. Initialize environments (now the S3 backend exists)
-cd ../environments/staging
-terraform init
-terraform apply
+# 2. Build AMIs
+cd ../../packer
+packer init .
+packer build bastion.pkr.hcl
+packer build chatwoot.pkr.hcl
+packer build monitoring.pkr.hcl
 
-cd ../environments/production
-terraform init
-terraform apply
+# 3. Initialize environments
+cd ../terraform/environments/staging
+terraform init && terraform apply
+
+cd ../production
+terraform init && terraform apply
+
+# 4. Set secrets in SSM (once per env)
+aws ssm put-parameter --name "/chatwoot/production/SECRET_KEY_BASE" \
+  --value "$(openssl rand -hex 64)" --type SecureString --overwrite --region eu-west-3
+# ... repeat for POSTGRES_PASSWORD, REDIS_PASSWORD, SMTP_PASSWORD, GRAFANA_PASSWORD, GITLAB_REGISTRY_TOKEN
 ```
 
 ---
@@ -267,51 +273,14 @@ terraform apply
 | --- | --- |
 | Automated backups retention | **14 days** (PITR enabled) |
 | Backup window | `03:00–04:00` UTC |
-| Final snapshot on destroy | enabled (`chatwoot-{env}-final`) |
+| Final snapshot on destroy | enabled |
 | Deletion protection | enabled |
-
-AWS takes a daily snapshot and keeps the last 14. Point-in-Time Recovery (PITR) allows restoring to any second within that window.
 
 ### ElastiCache Redis
 
 | Parameter | Value |
 | --- | --- |
-| Snapshot retention | **7 days** |
-| Snapshot window | `04:00–05:00` UTC (after RDS window) |
+| Snapshot retention | **5 days** |
+| Maintenance window | `05:00–06:00` UTC |
 
-Redis holds sessions, Sidekiq queues, and application cache — not the source of truth. PostgreSQL is the critical data store; Redis snapshots cover operational recovery only.
-
-> **Long-term archiving:** for compliance or recovery windows beyond 14 days, export RDS snapshots to S3 via AWS Backup (max native retention is 35 days).
-
----
-
-## SSM Parameter Store
-
-Secrets and computed endpoints are stored under `/chatwoot/{env}/{VARIABLE_NAME}`.
-
-`SecureString` parameters are created with a `PLACEHOLDER` value by Terraform and
-never overwritten on subsequent applies (`lifecycle { ignore_changes = [value] }`).
-Set real values once after the first apply:
-
-```bash
-aws ssm put-parameter \
-  --name "/chatwoot/production/SECRET_KEY_BASE" \
-  --value "$(openssl rand -hex 64)" \
-  --type "SecureString" --overwrite --region eu-west-3
-```
-
-`String` parameters (RDS endpoint, Redis URL, S3 bucket name, frontend URL) are
-populated automatically by Terraform on every apply.
-
-At boot, each EC2 instance fetches all parameters in a single API call:
-
-```bash
-aws ssm get-parameters-by-path \
-  --path "/chatwoot/production/" \
-  --with-decryption \
-  --region eu-west-3 \
-  --query "Parameters[*].[Name,Value]" \
-  --output text | while IFS=$'\t' read -r name value; do
-    printf '%s=%s\n' "$(basename "$name")" "$value"
-  done > /opt/chatwoot/.env
-```
+Redis holds sessions, Sidekiq queues, and cache — not the source of truth. PostgreSQL is the critical data store.

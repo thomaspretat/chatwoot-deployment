@@ -36,10 +36,15 @@
       src: ../docker/docker-compose-monitoring.yml
       dest: /app/monitoring/docker-compose-monitoring.yml
 
-  - name: Copier la config Prometheus
+  - name: Copier la config Prometheus (production)
     copy:
-      src: ../docker/config/prometheus.yml
-      dest: /app/monitoring/prometheus.yml
+      src: ../docker/config/prometheus-prod.yml
+      dest: /app/monitoring/prometheus-prod.yml
+
+  - name: Copier la config Prometheus (staging)
+    copy:
+      src: ../docker/config/prometheus-staging.yml
+      dest: /app/monitoring/prometheus-staging.yml
 
   - name: Copier le script de démarrage monitoring
     copy:

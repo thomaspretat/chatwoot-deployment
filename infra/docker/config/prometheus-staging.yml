@@ -1,0 +1,30 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # node-exporter sur l'instance monitoring elle-même (via Docker network)
+  - job_name: 'monitoring-node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  # node-exporter sur l'instance chatwoot (métriques host : CPU, RAM, disque, réseau)
+  - job_name: 'chatwoot-node'
+    ec2_sd_configs:
+      - region: eu-west-3
+        port: 9100
+        filters:
+          - name: "tag:Role"
+            values: ["chatwoot"]
+          - name: "tag:Environment"
+            values: ["staging"]
+
+  # redis-exporter sur l'instance chatwoot (métriques Redis local)
+  - job_name: 'chatwoot-redis'
+    ec2_sd_configs:
+      - region: eu-west-3
+        port: 9121
+        filters:
+          - name: "tag:Role"
+            values: ["chatwoot"]
+          - name: "tag:Environment"
+            values: ["staging"]
