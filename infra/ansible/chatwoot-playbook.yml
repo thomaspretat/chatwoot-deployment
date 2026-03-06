@@ -1,145 +1,169 @@
 - hosts: all
-  become: true  # Faire les tâches en root
+  become: true # Faire les tâches en root
   tasks:
-  - name: Update apt
-    apt:
-      update_cache: true   # apt update
-      upgrade: dist        # upgrade
+    - name: Update apt
+      apt:
+        update_cache: true # apt update
+        upgrade: dist # upgrade
 
-  - name: Installer les packages utiles
-    apt:
-      name:
-        - curl
-        - unzip
-        - awscli
-        - fail2ban
-        - ufw
+    - name: Installer les packages utiles
+      apt:
+        name:
+          - curl
+          - unzip
+          - fail2ban
+          - ufw
 
-#-----------------Chatwoot provision
+    - name: Installer AWS CLI v2
+      shell: |
+        curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+        unzip -q /tmp/awscliv2.zip -d /tmp
+        /tmp/aws/install
+        rm -rf /tmp/awscliv2.zip /tmp/aws
 
-  - name: Installer Docker
-    shell: curl -fsSL https://get.docker.com | sh   # Utiliser le conveninent script disponible plus simple
+    #-----------------Chatwoot provision
 
-  - name: Créer le dossier de l'app
-    file:
-      path: /app/chatwoot
-      state: directory
+    - name: Installer Docker
+      shell: curl -fsSL https://get.docker.com | sh # Utiliser le convenient script disponible plus simple
 
-  - name: Copier le docker-compose prod
-    copy:
-      src: ../docker/docker-compose-prod.yml
-      dest: /app/chatwoot/docker-compose-prod.yml
+    - name: Créer le dossier de l'app
+      file:
+        path: /app/chatwoot
+        state: directory
 
-  - name: Copier le docker-compose staging
-    copy:
-      src: ../docker/docker-compose-staging.yml
-      dest: /app/chatwoot/docker-compose-staging.yml
+    - name: Copier le docker-compose prod
+      copy:
+        src: ../docker/docker-compose-prod.yml
+        dest: /app/chatwoot/docker-compose-prod.yml
 
-  - name: Copier la config Nginx
-    copy:
-      src: ../docker/config/nginx.conf
-      dest: /app/chatwoot/nginx.conf
+    - name: Copier le docker-compose staging
+      copy:
+        src: ../docker/docker-compose-staging.yml
+        dest: /app/chatwoot/docker-compose-staging.yml
 
-  - name: Copier le script de démarrage chatwoot
-    copy:
-      src: ../docker/scripts/chatwoot-start.sh
-      dest: /app/chatwoot/chatwoot-start.sh
-      mode: '0755'
+    - name: Copier la config Nginx
+      copy:
+        src: ../docker/config/nginx.conf
+        dest: /app/chatwoot/nginx.conf
 
-  - name: Créer le service systemd chatwoot
-    copy:
-      dest: /etc/systemd/system/chatwoot.service
-      content: |
-        [Unit]
-        Description=Chatwoot startup (SSM secrets + Docker Compose)
-        After=network-online.target docker.service
-        Wants=network-online.target docker.service
+    - name: Copier le script de démarrage chatwoot
+      copy:
+        src: ../docker/scripts/chatwoot-start.sh
+        dest: /app/chatwoot/chatwoot-start.sh
+        mode: "0755"
 
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        ExecStart=/app/chatwoot/chatwoot-start.sh
+    - name: Créer le service systemd chatwoot
+      copy:
+        dest: /etc/systemd/system/chatwoot.service
+        content: |
+          [Unit]
+          Description=Chatwoot startup (SSM secrets + Docker Compose)
+          After=network-online.target docker.service
+          Wants=network-online.target docker.service
 
-        [Install]
-        WantedBy=multi-user.target
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/app/chatwoot/chatwoot-start.sh
 
-  - name: Activer le service chatwoot
-    systemd_service:
-      name: chatwoot
-      enabled: yes
-      daemon_reload: yes
+          [Install]
+          WantedBy=multi-user.target
 
-  - name: Pré-pull de l'image Chatwoot # cache les layers dans l'AMI pour un pull plus rapide lors du script de provisionning
-    shell: cd /app/chatwoot && docker compose -f docker-compose-prod.yml pull
+    - name: Activer le service chatwoot
+      systemd_service:
+        name: chatwoot
+        enabled: yes
+        daemon_reload: yes
 
-#-----------------SSH Hardening
+    - name: Pré-pull de l'image Chatwoot # cache les layers dans l'AMI pour un pull plus rapide lors du script de provisionning
+      shell: cd /app/chatwoot && docker compose -f docker-compose-prod.yml pull
 
-  - name: Changer le port SSH à 2022
-    lineinfile:
-      path: /etc/ssh/sshd_config
-      regexp: '^#?Port '
-      line: 'Port 2022'
+    #-----------------SSH Hardening
 
-  - name: Désactiver le login root SSH
-    lineinfile:
-      path: /etc/ssh/sshd_config
-      regexp: '^#?PermitRootLogin'
-      line: 'PermitRootLogin no'
+    - name: Changer le port SSH à 2022
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?Port "
+        line: "Port 2022"
 
-  - name: Désactiver authentification par mot de passe
-    lineinfile:
-      path: /etc/ssh/sshd_config
-      regexp: '^#?PasswordAuthentication'
-      line: 'PasswordAuthentication no'
+    - name: Désactiver le login root SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin no"
 
-  - name: Configurer fail2ban pour SSH
-    copy:
-      dest: /etc/fail2ban/jail.local
-      content: |
-        [sshd]
-        enabled = true
-        port = 2022
-        maxretry = 3
-        bantime = 3600
-        findtime = 600
+    - name: Désactiver authentification par mot de passe
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
 
-  - name: Activer et démarrer fail2ban
-    systemd_service:
-      name: fail2ban
-      enabled: yes
-      state: started
+    - name: Configurer fail2ban pour SSH
+      copy:
+        dest: /etc/fail2ban/jail.local
+        content: |
+          [sshd]
+          enabled = true
+          port = 2022
+          maxretry = 3
+          bantime = 3600
+          findtime = 600
 
-#-----------------UFW
+    - name: Activer et démarrer fail2ban
+      systemd_service:
+        name: fail2ban
+        enabled: yes
+        state: started
 
-  - name: Bloquer tout le trafic entrant par défaut
-    ufw:
-      default: deny
-      direction: incoming
+    #-----------------UFW
 
-  - name: Autoriser tout le trafic sortant par défaut
-    ufw:
-      default: allow
-      direction: outgoing
+    - name: Bloquer tout le trafic entrant par défaut
+      ufw:
+        default: deny
+        direction: incoming
 
-  - name: Autoriser SSH sur le port 2022
-    ufw:
-      rule: allow
-      port: '2022'
-      proto: tcp
+    - name: Autoriser tout le trafic sortant par défaut
+      ufw:
+        default: allow
+        direction: outgoing
 
-  - name: Autoriser le port 3000 (Chatwoot)
-    ufw:
-      rule: allow
-      port: '3000'
-      proto: tcp
+    - name: Autoriser SSH sur le port 2022
+      ufw:
+        rule: allow
+        port: "2022"
+        proto: tcp
 
-  - name: Activer UFW
-    ufw:
-      state: enabled
+    - name: Autoriser le port 3000 (Chatwoot)
+      ufw:
+        rule: allow
+        port: "3000"
+        proto: tcp
 
-#-----------------Restart services
+    - name: Autoriser le port 80 (Nginx staging)
+      ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
 
-  - name: Redémarrer sshd
-    systemd_service:
-      name: sshd
-      state: restarted
+    - name: Autoriser le port 9100 (node-exporter)
+      ufw:
+        rule: allow
+        port: "9100"
+        proto: tcp
+
+    - name: Autoriser le port 9394 (prometheus-exporter Rails/Sidekiq)
+      ufw:
+        rule: allow
+        port: "9394"
+        proto: tcp
+
+    - name: Activer UFW
+      ufw:
+        state: enabled
+
+    #-----------------Restart services
+
+    - name: Redémarrer sshd
+      systemd_service:
+        name: ssh
+        state: restarted

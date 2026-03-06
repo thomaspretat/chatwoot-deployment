@@ -11,9 +11,15 @@
       name:
         - curl
         - unzip
-        - awscli
         - fail2ban
         - ufw
+
+  - name: Installer AWS CLI v2
+    shell: |
+      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+      unzip -q /tmp/awscliv2.zip -d /tmp
+      /tmp/aws/install
+      rm -rf /tmp/awscliv2.zip /tmp/aws
 
 #-----------------Monitoring provision
 
@@ -148,5 +154,5 @@
 
   - name: Redémarrer sshd
     systemd_service:
-      name: sshd
+      name: ssh
       state: restarted

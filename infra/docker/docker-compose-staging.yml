@@ -1,8 +1,6 @@
-version: '3'
-
 services:
   base: &base
-    image: ${DOCKER_IMAGE_TAG}
+    image: chatwoot/chatwoot:latest
     env_file: .env
     volumes:
       - storage_data:/app/storage
@@ -12,12 +10,15 @@ services:
     depends_on:
       - postgres
       - redis
+      - prometheus-exporter
     environment:
       - NODE_ENV=production
       - RAILS_ENV=production
       - INSTALLATION_ENV=docker
+      - PROMETHEUS_EXPORTER_HOST=prometheus-exporter
+      - PROMETHEUS_EXPORTER_PORT=9394
     entrypoint: docker/entrypoints/rails.sh
-    command: ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0']
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
     restart: always
 
   sidekiq:
@@ -25,17 +26,42 @@ services:
     depends_on:
       - postgres
       - redis
+      - prometheus-exporter
     environment:
       - NODE_ENV=production
       - RAILS_ENV=production
       - INSTALLATION_ENV=docker
-    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
+      - PROMETHEUS_EXPORTER_HOST=prometheus-exporter
+      - PROMETHEUS_EXPORTER_PORT=9394
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    restart: always
+
+  prometheus-exporter:
+    image: chatwoot/chatwoot:latest
+    command: ["bundle", "exec", "prometheus_exporter", "-b", "0.0.0.0", "-p", "9394"]
+    ports:
+      - "9394:9394"
+    restart: always
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "9100:9100"
+    pid: host
     restart: always
 
   nginx:
     image: nginx:alpine
     ports:
-      - '0.0.0.0:80:80'
+      - "0.0.0.0:80:80"
     volumes:
       - /app/chatwoot/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
@@ -55,7 +81,7 @@ services:
   redis:
     image: redis:alpine
     restart: always
-    command: ["sh", "-c", "redis-server --requirepass \"$REDIS_PASSWORD\""]
+    command: ["sh", "-c", 'redis-server --requirepass "$REDIS_PASSWORD"']
     env_file: .env
     volumes:
       - redis_data:/data

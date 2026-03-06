@@ -78,5 +78,5 @@
 
   - name: Redémarrer sshd
     systemd_service:
-      name: sshd
+      name: ssh
       state: restarted

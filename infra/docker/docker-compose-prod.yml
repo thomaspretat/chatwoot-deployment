@@ -1,31 +1,59 @@
-version: '3'
-
 services:
   base: &base
-    image: ${DOCKER_IMAGE_TAG}
+    image: chatwoot/chatwoot:latest
     env_file: .env ## Change this file for customized env variables
     volumes:
       - storage_data:/app/storage
 
   rails:
     <<: *base
+    depends_on:
+      - prometheus-exporter
     ports:
-      - '0.0.0.0:3000:3000'
+      - "0.0.0.0:3000:3000"
     environment:
       - NODE_ENV=production
       - RAILS_ENV=production
       - INSTALLATION_ENV=docker
+      - PROMETHEUS_EXPORTER_HOST=prometheus-exporter
+      - PROMETHEUS_EXPORTER_PORT=9394
     entrypoint: docker/entrypoints/rails.sh
-    command: ['bundle', 'exec', 'rails', 's', '-p', '3000', '-b', '0.0.0.0']
+    command: ["bundle", "exec", "rails", "s", "-p", "3000", "-b", "0.0.0.0"]
     restart: always
 
   sidekiq:
     <<: *base
+    depends_on:
+      - prometheus-exporter
     environment:
       - NODE_ENV=production
       - RAILS_ENV=production
       - INSTALLATION_ENV=docker
-    command: ['bundle', 'exec', 'sidekiq', '-C', 'config/sidekiq.yml']
+      - PROMETHEUS_EXPORTER_HOST=prometheus-exporter
+      - PROMETHEUS_EXPORTER_PORT=9394
+    command: ["bundle", "exec", "sidekiq", "-C", "config/sidekiq.yml"]
+    restart: always
+
+  prometheus-exporter:
+    image: chatwoot/chatwoot:latest
+    command: ["bundle", "exec", "prometheus_exporter", "-b", "0.0.0.0", "-p", "9394"]
+    ports:
+      - "9394:9394"
+    restart: always
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "9100:9100"
+    pid: host
     restart: always
 
 volumes:
