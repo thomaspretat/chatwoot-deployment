@@ -26,3 +26,5 @@ packer_cache/
 # OS
 .DS_Store
 Thumbs.db
+
+ssm-backup-restore.sh
