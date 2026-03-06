@@ -267,6 +267,12 @@ resource "aws_instance" "app" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-app", Role = "chatwoot" })
 }
 
+resource "aws_eip" "app" {
+  instance = aws_instance.app.id
+  domain   = "vpc"
+  tags     = merge(var.tags, { Name = "chatwoot-${var.env}-app-eip" })
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # EC2 MONITORING — Inline (staging-specific)
 # Prometheus (metrics collection) + Grafana (dashboards).
@@ -306,66 +312,59 @@ resource "aws_instance" "monitoring" {
 resource "aws_ssm_parameter" "secret_key_base" {
   name  = "/chatwoot/${var.env}/SECRET_KEY_BASE"
   type  = "SecureString"
-  value = "PLACEHOLDER"
-  lifecycle { ignore_changes = [value] }
-  tags = var.tags
+  value = var.secret_key_base
+  tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "postgres_password" {
   name  = "/chatwoot/${var.env}/POSTGRES_PASSWORD"
   type  = "SecureString"
-  value = "PLACEHOLDER"
-  lifecycle { ignore_changes = [value] }
-  tags = var.tags
+  value = var.postgres_password
+  tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "redis_password" {
   name  = "/chatwoot/${var.env}/REDIS_PASSWORD"
   type  = "SecureString"
-  value = "PLACEHOLDER"
-  lifecycle { ignore_changes = [value] }
-  tags = var.tags
+  value = var.redis_password
+  tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "smtp_password" {
   name  = "/chatwoot/${var.env}/SMTP_PASSWORD"
   type  = "SecureString"
-  value = "PLACEHOLDER"
-  lifecycle { ignore_changes = [value] }
-  tags = var.tags
+  value = var.smtp_password
+  tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "gitlab_registry_token" {
   name  = "/chatwoot/${var.env}/GITLAB_REGISTRY_TOKEN"
   type  = "SecureString"
-  value = "PLACEHOLDER"
-  lifecycle { ignore_changes = [value] }
-  tags = var.tags
+  value = var.gitlab_registry_token
+  tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "grafana_password" {
   name  = "/chatwoot/${var.env}/GRAFANA_PASSWORD"
   type  = "SecureString"
-  value = "PLACEHOLDER"
-  lifecycle { ignore_changes = [value] }
-  tags = var.tags
+  value = var.grafana_password
+  tags  = var.tags
 }
 
 # Tag de l'image Docker à déployer — mis à jour par la CI après chaque build.
-# Terraform crée le paramètre avec "latest" mais ne l'écrase jamais ensuite.
 # Rollback : aws ssm put-parameter --name /chatwoot/{env}/DOCKER_IMAGE_TAG --value <tag> --overwrite
 resource "aws_ssm_parameter" "docker_image_tag" {
   name  = "/chatwoot/${var.env}/DOCKER_IMAGE_TAG"
   type  = "String"
-  value = "latest"
+  value = var.docker_image_tag
   lifecycle { ignore_changes = [value] }
-  tags = var.tags
+  tags  = var.tags
 }
 
 resource "aws_ssm_parameter" "frontend_url" {
   name  = "/chatwoot/${var.env}/FRONTEND_URL"
   type  = "String"
-  value = "http://${aws_instance.app.public_ip}"
+  value = var.frontend_url
   tags  = var.tags
 }
 

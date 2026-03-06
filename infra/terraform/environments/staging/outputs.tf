@@ -9,8 +9,13 @@ output "bastion_public_ip" {
 }
 
 output "app_public_ip" {
-  description = "Public IP of the Chatwoot EC2 — HTTP and SSH access"
-  value       = aws_instance.app.public_ip
+  description = "Public IP of the Chatwoot EC2 (stable Elastic IP)"
+  value       = aws_eip.app.public_ip
+}
+
+output "app_private_ip" {
+  description = "Private IP of the Chatwoot EC2 — for SSH via bastion"
+  value       = aws_instance.app.private_ip
 }
 
 output "monitoring_public_ip" {
@@ -25,7 +30,7 @@ output "grafana_url" {
 
 output "chatwoot_url" {
   description = "URL Chatwoot staging"
-  value       = "http://${aws_instance.app.public_ip}"
+  value       = "https://staging-chatwoot.thomaspretat.com"
 }
 
 output "app_instance_id" {

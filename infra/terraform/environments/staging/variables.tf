@@ -63,6 +63,55 @@ variable "key_name" {
   type        = string
 }
 
+# ── Secrets (SSM Parameter Store) ─────────────────────────────────────────────
+
+variable "secret_key_base" {
+  description = "Rails secret key base"
+  type        = string
+  sensitive   = true
+}
+
+variable "postgres_password" {
+  description = "PostgreSQL password"
+  type        = string
+  sensitive   = true
+}
+
+variable "redis_password" {
+  description = "Redis password"
+  type        = string
+  sensitive   = true
+}
+
+variable "smtp_password" {
+  description = "SMTP password"
+  type        = string
+  sensitive   = true
+}
+
+variable "gitlab_registry_token" {
+  description = "GitLab registry token"
+  type        = string
+  sensitive   = true
+}
+
+variable "grafana_password" {
+  description = "Grafana admin password"
+  type        = string
+  sensitive   = true
+}
+
+variable "frontend_url" {
+  description = "Chatwoot frontend URL (Cloudflare domain)"
+  type        = string
+}
+
+variable "docker_image_tag" {
+  description = "Docker image tag to deploy"
+  type        = string
+  default     = "latest"
+}
+
 # ── Tags ─────────────────────────────────────────────────────────────────────
 
 variable "tags" {
