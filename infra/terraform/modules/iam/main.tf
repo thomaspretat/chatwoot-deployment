@@ -61,6 +61,21 @@ resource "aws_iam_role_policy" "ec2_s3" {
   })
 }
 
+# ec2:DescribeTags — nécessaire pour que chatwoot-start.sh lise le tag Environment
+resource "aws_iam_role_policy" "ec2_describe_tags" {
+  name = "chatwoot-${var.env}-ec2-describe-tags"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["ec2:DescribeTags"]
+      Resource = "*"
+    }]
+  })
+}
+
 # Instance Profile (attaché au Launch Template / aws_instance)
 resource "aws_iam_instance_profile" "ec2" {
   name = "chatwoot-${var.env}-ec2-profile"

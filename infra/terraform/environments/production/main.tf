@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "chatwoot-terraform-state"
+    bucket         = "chatwoot-batch23-terraform-state"
     key            = "environments/production/terraform.tfstate"
     region         = "eu-west-3"
     dynamodb_table = "chatwoot-terraform-locks"

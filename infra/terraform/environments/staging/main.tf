@@ -9,7 +9,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "chatwoot-terraform-state"
+    bucket         = "chatwoot-batch23-terraform-state"
     key            = "environments/staging/terraform.tfstate"
     region         = "eu-west-3"
     dynamodb_table = "chatwoot-terraform-locks"
@@ -137,7 +137,7 @@ resource "aws_security_group" "bastion" {
 
 resource "aws_security_group" "monitoring" {
   name        = "chatwoot-${var.env}-monitoring-sg"
-  description = "Prometheus + Grafana — accessible from bastion only"
+  description = "Prometheus + Grafana - accessible from bastion only"
   vpc_id      = module.networking.vpc_id
 
   # Grafana (access from bastion via SSH tunnel or ProxyJump)
@@ -176,7 +176,7 @@ resource "aws_security_group" "monitoring" {
 
 resource "aws_security_group" "app" {
   name        = "chatwoot-${var.env}-app-sg"
-  description = "Chatwoot app — public HTTP, SSH and scraping from bastion/monitoring"
+  description = "Chatwoot app - public HTTP, SSH and scraping from bastion/monitoring"
   vpc_id      = module.networking.vpc_id
 
   # HTTP Chatwoot (public access)
@@ -381,5 +381,27 @@ resource "aws_ssm_parameter" "redis_url" {
   name  = "/chatwoot/${var.env}/REDIS_URL"
   type  = "String"
   value = "redis://redis:6379"
+  tags  = var.tags
+}
+
+resource "aws_ssm_parameter" "postgres_username" {
+  name  = "/chatwoot/${var.env}/POSTGRES_USERNAME"
+  type  = "String"
+  value = "chatwoot"
+  tags  = var.tags
+}
+
+resource "aws_ssm_parameter" "postgres_db" {
+  name  = "/chatwoot/${var.env}/POSTGRES_DB"
+  type  = "String"
+  value = "chatwoot_${var.env}"
+  tags  = var.tags
+}
+
+# Staging : pas de certificat SSL, on désactive le force_ssl de Rails
+resource "aws_ssm_parameter" "force_ssl" {
+  name  = "/chatwoot/${var.env}/FORCE_SSL"
+  type  = "String"
+  value = "false"
   tags  = var.tags
 }
