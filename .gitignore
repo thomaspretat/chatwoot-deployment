@@ -5,19 +5,13 @@
 .terraform/
 .terraform.lock.hcl
 crash.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
 
 # Secrets & environment
 .env
 *.pem
 *.key
-credentials.json
 
 # Packer
-*.box
 packer_cache/
 
 # Ansible
@@ -25,4 +19,4 @@ packer_cache/
 
 # OS
 .DS_Store
-Thumbs.db
+.claude

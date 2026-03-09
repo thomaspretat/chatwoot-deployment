@@ -30,17 +30,12 @@ output "s3_bucket_name" {
 
 output "bastion_public_ip" {
   description = "Public IP of the bastion"
-  value       = aws_eip.bastion.public_ip
+  value       = aws_instance.bastion.public_ip
 }
 
 output "asg_name" {
   description = "ASG name — for SSM and Instance Refresh in the CI pipeline"
   value       = aws_autoscaling_group.this.name
-}
-
-output "ssm_parameter_path" {
-  description = "Root path of SSM parameters for this environment"
-  value       = "/chatwoot/${var.env}"
 }
 
 output "acm_validation_record" {

@@ -21,6 +21,15 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Référence au state persistent (EIP fixes)
+data "terraform_remote_state" "persistent" {
+  backend = "s3"
+  config = {
+    bucket = "chatwoot-batch23-terraform-state"
+    key    = "persistent/terraform.tfstate"
+    region = "eu-west-3"
+  }
+}
 
 # RÉCUPÉRATION DES AMIs — Récupère automatiquement les dernières AMIs construites avec Packer
 data "aws_ami" "bastion" {
@@ -228,11 +237,6 @@ resource "aws_instance" "bastion" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-bastion" })
 }
 
-resource "aws_eip" "bastion" {
-  instance = aws_instance.bastion.id
-  domain   = "vpc"
-  tags     = merge(var.tags, { Name = "chatwoot-${var.env}-bastion-eip" })
-}
 
 # EC2 APP
 # Chatwoot (rails + sidekiq) + PostgreSQL + Redis lancés via Docker Compose.
@@ -255,10 +259,9 @@ resource "aws_instance" "app" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-app", Role = "chatwoot" })
 }
 
-resource "aws_eip" "app" {
-  instance = aws_instance.app.id
-  domain   = "vpc"
-  tags     = merge(var.tags, { Name = "chatwoot-${var.env}-app-eip" })
+resource "aws_eip_association" "app" {
+  allocation_id = data.terraform_remote_state.persistent.outputs.staging_app_eip_id
+  instance_id   = aws_instance.app.id
 }
 
 # EC2 MONITORING
@@ -281,112 +284,7 @@ resource "aws_instance" "monitoring" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring" })
 }
 
-# SSM PARAMETER STORE
-# Convention : /chatwoot/{env}/{VARIABLE_NAME}
-# Type SecureString : chiffré par KMS, valeurs sensibles.
-# Type String : valeurs non-sensibles.
-# lifecycle { ignore_changes = [value] } : Terraform crée le paramètre avec
-# une valeur de substitution mais ne l'écrase PAS lors des applies suivants.
-resource "aws_ssm_parameter" "secret_key_base" {
-  name  = "/chatwoot/${var.env}/SECRET_KEY_BASE"
-  type  = "SecureString"
-  value = var.secret_key_base
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "postgres_password" {
-  name  = "/chatwoot/${var.env}/POSTGRES_PASSWORD"
-  type  = "SecureString"
-  value = var.postgres_password
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "redis_password" {
-  name  = "/chatwoot/${var.env}/REDIS_PASSWORD"
-  type  = "SecureString"
-  value = var.redis_password
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "smtp_password" {
-  name  = "/chatwoot/${var.env}/SMTP_PASSWORD"
-  type  = "SecureString"
-  value = var.smtp_password
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "gitlab_registry_token" {
-  name  = "/chatwoot/${var.env}/GITLAB_REGISTRY_TOKEN"
-  type  = "SecureString"
-  value = var.gitlab_registry_token
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "grafana_password" {
-  name  = "/chatwoot/${var.env}/GRAFANA_PASSWORD"
-  type  = "SecureString"
-  value = var.grafana_password
-  tags  = var.tags
-}
-
-# Tag de l'image Docker à déployer, mis à jour par la CI après chaque build.
-# Rollback : aws ssm put-parameter --name /chatwoot/{env}/DOCKER_IMAGE_TAG --value <tag> --overwrite
-resource "aws_ssm_parameter" "docker_image_tag" {
-  name  = "/chatwoot/${var.env}/DOCKER_IMAGE_TAG"
-  type  = "String"
-  value = var.docker_image_tag
-  lifecycle { ignore_changes = [value] }
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "frontend_url" {
-  name  = "/chatwoot/${var.env}/FRONTEND_URL"
-  type  = "String"
-  value = var.frontend_url
-  tags  = var.tags
-}
-
-# Staging : postgres et redis tournent en local dans Docker Compose
-resource "aws_ssm_parameter" "postgres_host" {
-  name  = "/chatwoot/${var.env}/POSTGRES_HOST"
-  type  = "String"
-  value = "postgres"
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "redis_url" {
-  name  = "/chatwoot/${var.env}/REDIS_URL"
-  type  = "String"
-  value = "redis://redis:6379"
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "postgres_username" {
-  name  = "/chatwoot/${var.env}/POSTGRES_USERNAME"
-  type  = "String"
-  value = "chatwoot"
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "postgres_db" {
-  name  = "/chatwoot/${var.env}/POSTGRES_DB"
-  type  = "String"
-  value = "chatwoot_${var.env}"
-  tags  = var.tags
-}
-
-# Staging : stockage local (pas de S3)
-resource "aws_ssm_parameter" "active_storage_service" {
-  name  = "/chatwoot/${var.env}/ACTIVE_STORAGE_SERVICE"
-  type  = "String"
-  value = "local"
-  tags  = var.tags
-}
-
-# Staging : pas de certificat SSL, on désactive le force_ssl de Rails
-resource "aws_ssm_parameter" "force_ssl" {
-  name  = "/chatwoot/${var.env}/FORCE_SSL"
-  type  = "String"
-  value = "false"
-  tags  = var.tags
+resource "aws_eip_association" "monitoring" {
+  allocation_id = data.terraform_remote_state.persistent.outputs.staging_monitoring_eip_id
+  instance_id   = aws_instance.monitoring.id
 }

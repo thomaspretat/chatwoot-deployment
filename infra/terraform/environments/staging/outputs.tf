@@ -4,13 +4,13 @@ output "vpc_id" {
 }
 
 output "bastion_public_ip" {
-  description = "Public IP of the bastion (stable Elastic IP) — SSH entry point"
-  value       = aws_eip.bastion.public_ip
+  description = "Public IP of the bastion"
+  value       = aws_instance.bastion.public_ip
 }
 
 output "app_public_ip" {
-  description = "Public IP of the Chatwoot EC2 (stable Elastic IP)"
-  value       = aws_eip.app.public_ip
+  description = "Public IP of the Chatwoot EC2 (persistent Elastic IP)"
+  value       = data.terraform_remote_state.persistent.outputs.staging_app_public_ip
 }
 
 output "app_private_ip" {
@@ -19,13 +19,13 @@ output "app_private_ip" {
 }
 
 output "monitoring_public_ip" {
-  description = "Public IP of the monitoring EC2 — Grafana and Prometheus"
-  value       = aws_instance.monitoring.public_ip
+  description = "Public IP of the monitoring EC2 (persistent Elastic IP)"
+  value       = data.terraform_remote_state.persistent.outputs.staging_monitoring_public_ip
 }
 
 output "grafana_url" {
   description = "Grafana URL (access restricted to team IPs)"
-  value       = "http://${aws_instance.monitoring.public_ip}:3000"
+  value       = "http://${data.terraform_remote_state.persistent.outputs.staging_monitoring_public_ip}:3000"
 }
 
 output "chatwoot_url" {

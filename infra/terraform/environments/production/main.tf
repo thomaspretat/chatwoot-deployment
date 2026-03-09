@@ -220,7 +220,8 @@ resource "aws_security_group" "redis" {
 module "iam" {
   source        = "../../modules/iam"
   env           = var.env
-  s3_bucket_arn = aws_s3_bucket.chatwoot.arn
+  enable_s3_policy = true
+  s3_bucket_arn    = aws_s3_bucket.chatwoot.arn
   tags          = var.tags
 }
 
@@ -288,7 +289,7 @@ resource "aws_db_parameter_group" "this" {
 }
 
 resource "aws_db_instance" "this" {
-  identifier            = "chatwoot_production"
+  identifier            = "chatwoot-production"
   engine                = "postgres"
   engine_version        = "16"
   instance_class        = var.rds_instance_class
@@ -307,11 +308,11 @@ resource "aws_db_instance" "this" {
   parameter_group_name   = aws_db_parameter_group.this.name
 
   multi_az                = true
-  backup_retention_period = 14
+  backup_retention_period = 1
   backup_window           = "03:00-04:00"
   maintenance_window      = "Mon:04:00-Mon:05:00"
 
-  deletion_protection               = true
+  deletion_protection               = false
   skip_final_snapshot               = false
   final_snapshot_identifier         = "chatwoot-${var.env}-final"
   performance_insights_enabled      = true
@@ -371,7 +372,7 @@ resource "aws_lb" "this" {
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.alb.id]
   subnets                    = module.networking.public_subnet_ids
-  enable_deletion_protection = true
+  enable_deletion_protection = false
   tags                       = merge(var.tags, { Name = "chatwoot-${var.env}-alb" })
 }
 
@@ -409,18 +410,18 @@ resource "aws_lb_listener" "http_redirect" {
   }
 }
 
-# resource "aws_lb_listener" "https" {
-#   load_balancer_arn = aws_lb.this.arn
-#   port              = 443
-#   protocol          = "HTTPS"
-#   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-#   certificate_arn   = aws_acm_certificate.this.arn
-#
-#   default_action {
-#     type             = "forward"
-#     target_group_arn = aws_lb_target_group.this.arn
-#   }
-# }
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.this.arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate.this.arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this.arn
+  }
+}
 
 # BASTION
 # ProxyJump : ssh -J ubuntu@<bastion_ip> ubuntu@<ec2_ip_privée>
@@ -442,12 +443,6 @@ resource "aws_instance" "bastion" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-bastion" })
 }
 
-resource "aws_eip" "bastion" {
-  instance = aws_instance.bastion.id
-  domain   = "vpc"
-  tags     = merge(var.tags, { Name = "chatwoot-${var.env}-bastion-eip" })
-}
-
 # ASG — Template de lancement + Groupe d'auto-scaling + politiques de mise à l'échelle
 resource "aws_launch_template" "this" {
   name_prefix   = "chatwoot-${var.env}-"
@@ -465,10 +460,10 @@ resource "aws_launch_template" "this" {
   }
 
   block_device_mappings {
-    device_name = "/dev/xvda"
+    device_name = "/dev/sda1"
     ebs {
       volume_type           = "gp3"
-      volume_size           = 30
+      volume_size           = 50
       encrypted             = true
       delete_on_termination = true
     }
@@ -497,8 +492,8 @@ resource "aws_autoscaling_group" "this" {
   }
 
   target_group_arns         = [aws_lb_target_group.this.arn]
-  health_check_type         = "ELB"
-  health_check_grace_period = 120
+  health_check_type         = "EC2"
+  health_check_grace_period = 600
 
   instance_refresh {
     strategy = "Rolling"
@@ -568,7 +563,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
 # Prometheus + Grafana
 resource "aws_security_group" "monitoring" {
   name        = "chatwoot-${var.env}-monitoring-sg"
-  description = "Prometheus + Grafana — accessible from Bastion (SSH) and scrapes EC2"
+  description = "Prometheus + Grafana - accessible from Bastion (SSH) and scrapes EC2"
   vpc_id      = module.networking.vpc_id
 
   # Grafana (depuis allowed_ssh_cidrs pour accès au tableau de bord)
@@ -623,64 +618,7 @@ resource "aws_instance" "monitoring" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring", Role = "monitoring" })
 }
 
-
-# SSM PARAMETER STORE
-# Convention : /chatwoot/{env}/{VARIABLE_NAME}
-# Type SecureString : chiffré par KMS, valeurs sensibles depuis terraform.tfvars.
-# Type String : valeurs non-sensibles (endpoints calculés par Terraform).
-resource "aws_ssm_parameter" "secret_key_base" {
-  name  = "/chatwoot/${var.env}/SECRET_KEY_BASE"
-  type  = "SecureString"
-  value = var.secret_key_base
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "postgres_password" {
-  name  = "/chatwoot/${var.env}/POSTGRES_PASSWORD"
-  type  = "SecureString"
-  value = var.rds_db_password
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "redis_password" {
-  name  = "/chatwoot/${var.env}/REDIS_PASSWORD"
-  type  = "SecureString"
-  value = var.redis_password
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "smtp_password" {
-  name  = "/chatwoot/${var.env}/SMTP_PASSWORD"
-  type  = "SecureString"
-  value = var.smtp_password
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "gitlab_registry_token" {
-  name  = "/chatwoot/${var.env}/GITLAB_REGISTRY_TOKEN"
-  type  = "SecureString"
-  value = var.gitlab_registry_token
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "grafana_password" {
-  name  = "/chatwoot/${var.env}/GRAFANA_PASSWORD"
-  type  = "SecureString"
-  value = var.grafana_password
-  tags  = var.tags
-}
-
-# Tag de l'image Docker à déployer, mis à jour par la CI après chaque build.
-# Rollback : aws ssm put-parameter --name /chatwoot/{env}/DOCKER_IMAGE_TAG --value <tag> --overwrite
-resource "aws_ssm_parameter" "docker_image_tag" {
-  name  = "/chatwoot/${var.env}/DOCKER_IMAGE_TAG"
-  type  = "String"
-  value = var.docker_image_tag
-  lifecycle { ignore_changes = [value] }
-  tags  = var.tags
-}
-
-# Valeurs calculées automatiquement par Terraform (endpoints AWS)
+# SSM — Paramètres calculés automatiquement (endpoints infra, pas des secrets)
 resource "aws_ssm_parameter" "postgres_host" {
   name  = "/chatwoot/${var.env}/POSTGRES_HOST"
   type  = "String"
@@ -695,10 +633,6 @@ resource "aws_ssm_parameter" "redis_url" {
   tags  = var.tags
 }
 
-# REDIS_ADDR est utilisé par le redis-exporter (oliver006/redis_exporter).
-# Même endpoint que REDIS_URL mais sans le suffixe /0 (numéro de DB Redis),
-# car le redis-exporter ne supporte pas ce format.
-# Doc : https://github.com/oliver006/redis_exporter
 resource "aws_ssm_parameter" "redis_addr" {
   name  = "/chatwoot/${var.env}/REDIS_ADDR"
   type  = "String"
@@ -706,37 +640,9 @@ resource "aws_ssm_parameter" "redis_addr" {
   tags  = var.tags
 }
 
-resource "aws_ssm_parameter" "frontend_url" {
-  name  = "/chatwoot/${var.env}/FRONTEND_URL"
-  type  = "String"
-  value = "https://${var.domain_name}"
-  tags  = var.tags
-}
-
 resource "aws_ssm_parameter" "s3_bucket_name" {
   name  = "/chatwoot/${var.env}/S3_BUCKET_NAME"
   type  = "String"
   value = aws_s3_bucket.chatwoot.bucket
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "active_storage_service" {
-  name  = "/chatwoot/${var.env}/ACTIVE_STORAGE_SERVICE"
-  type  = "String"
-  value = "amazon"
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "aws_region" {
-  name  = "/chatwoot/${var.env}/AWS_REGION"
-  type  = "String"
-  value = var.aws_region
-  tags  = var.tags
-}
-
-resource "aws_ssm_parameter" "redis_openssl_verify_mode" {
-  name  = "/chatwoot/${var.env}/REDIS_OPENSSL_VERIFY_MODE"
-  type  = "String"
-  value = "none"
   tags  = var.tags
 }

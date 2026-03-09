@@ -2,7 +2,7 @@
 
 source "amazon-ebs" "bastion" {
   ami_name      = "bastion-{{timestamp}}"
-  instance_type = "t3.micro"
+  instance_type = "t3.small"
   source_ami    = data.amazon-ami.ubuntu.id
   ssh_username  = "ubuntu"
   region        = "eu-west-3"
