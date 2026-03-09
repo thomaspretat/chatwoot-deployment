@@ -21,10 +21,8 @@ provider "aws" {
   region = var.aws_region
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# AMI LOOKUPS — Fetch latest Packer-built AMIs automatically
-# ─────────────────────────────────────────────────────────────────────────────
 
+# RÉCUPÉRATION DES AMIs — Récupère automatiquement les dernières AMIs construites avec Packer
 data "aws_ami" "bastion" {
   most_recent = true
   owners      = ["self"]
@@ -70,10 +68,7 @@ data "aws_ami" "monitoring" {
   }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SHARED MODULE — Networking
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Networking
 module "networking" {
   source = "../../modules/networking"
 
@@ -86,10 +81,7 @@ module "networking" {
   tags                 = var.tags
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# IAM — Users (Terraform/CI) + EC2 Role + Instance Profile
-# ─────────────────────────────────────────────────────────────────────────────
-
+# IAM — Utilisateurs (Terraform/CI) + Rôle EC2 + Profil d'instance
 module "iam" {
   source = "../../modules/iam"
   env    = var.env
@@ -103,15 +95,8 @@ resource "aws_iam_role_policy_attachment" "ec2_ssm_run_command" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SECURITY GROUPS — Inline (staging-specific)
-#
-# Creation order (no circular dependency):
-#   1. bastion_sg  — no reference to other SGs
-#   2. monitoring_sg — ingress SSH depuis bastion_sg
-#   3. app_sg — ingress SSH depuis bastion_sg + ingress 9100 depuis monitoring_sg
-# ─────────────────────────────────────────────────────────────────────────────
-
+# GROUPES DE SÉCURITÉ — Inline (spécifiques au staging)
+# Ordre de création (pas de dépendance circulaire) :
 resource "aws_security_group" "bastion" {
   name        = "chatwoot-${var.env}-bastion-sg"
   description = "SSH only from allowed CIDRs"
@@ -124,7 +109,7 @@ resource "aws_security_group" "bastion" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
-  # Egress SSH to app and monitoring (for ProxyJump and tunnels SSH)
+  # Egress SSH vers l'app et le monitoring (pour ProxyJump et tunnels SSH)
   egress {
     from_port   = 2022
     to_port     = 2022
@@ -140,7 +125,7 @@ resource "aws_security_group" "monitoring" {
   description = "Prometheus + Grafana - accessible from bastion only"
   vpc_id      = module.networking.vpc_id
 
-  # Grafana (access from bastion via SSH tunnel or ProxyJump)
+  # Grafana (accès depuis le bastion via tunnel SSH ou ProxyJump)
   ingress {
     from_port   = 3000
     to_port     = 3000
@@ -148,7 +133,7 @@ resource "aws_security_group" "monitoring" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
-  # Prometheus UI
+  # Interface Prometheus
   ingress {
     from_port   = 9090
     to_port     = 9090
@@ -156,7 +141,7 @@ resource "aws_security_group" "monitoring" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
-  # SSH from bastion only
+  # SSH depuis le bastion uniquement
   ingress {
     from_port       = 2022
     to_port         = 2022
@@ -179,7 +164,7 @@ resource "aws_security_group" "app" {
   description = "Chatwoot app - public HTTP, SSH and scraping from bastion/monitoring"
   vpc_id      = module.networking.vpc_id
 
-  # HTTP Chatwoot (public access)
+  # HTTP Chatwoot (accès public)
   ingress {
     from_port   = 80
     to_port     = 80
@@ -187,7 +172,7 @@ resource "aws_security_group" "app" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # SSH only from bastion (ProxyJump, tunnels SSH)
+  # SSH depuis le bastion uniquement (ProxyJump, tunnels SSH)
   ingress {
     from_port       = 2022
     to_port         = 2022
@@ -195,7 +180,7 @@ resource "aws_security_group" "app" {
     security_groups = [aws_security_group.bastion.id]
   }
 
-  # node_exporter (port 9100) — from monitoring ec2 only
+  # node_exporter (port 9100) — depuis l'EC2 de monitoring uniquement
   ingress {
     from_port       = 9100
     to_port         = 9100
@@ -213,12 +198,10 @@ resource "aws_security_group" "app" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-app-sg" })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BASTION — Inline (staging-specific)
-# Single SSH entry point. ProxyJump to app and monitoring.
-# ssh -J ubuntu@<bastion_ip> ubuntu@<app_private_ip>
-# ─────────────────────────────────────────────────────────────────────────────
 
+# BASTION
+# Point d'entrée SSH unique. ProxyJump vers l'app et le monitoring.
+# ssh -J ubuntu@<bastion_ip> ubuntu@<app_ip_privée>
 resource "aws_instance" "bastion" {
   ami                         = data.aws_ami.bastion.id
   instance_type               = var.bastion_instance_type
@@ -243,12 +226,9 @@ resource "aws_eip" "bastion" {
   tags     = merge(var.tags, { Name = "chatwoot-${var.env}-bastion-eip" })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# EC2 APP — Inline (staging-specific)
-# Chatwoot (rails + sidekiq) + PostgreSQL + Redis running via Docker Compose.
-# ACTIVE_STORAGE_SERVICE=local (no S3 in staging).
-# ─────────────────────────────────────────────────────────────────────────────
-
+# EC2 APP
+# Chatwoot (rails + sidekiq) + PostgreSQL + Redis lancés via Docker Compose.
+# ACTIVE_STORAGE_SERVICE=local (pas de S3 en staging).
 resource "aws_instance" "app" {
   ami                    = data.aws_ami.chatwoot.id
   instance_type          = var.app_instance_type
@@ -273,12 +253,8 @@ resource "aws_eip" "app" {
   tags     = merge(var.tags, { Name = "chatwoot-${var.env}-app-eip" })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# EC2 MONITORING — Inline (staging-specific)
-# Prometheus (metrics collection) + Grafana (dashboards).
-# Scrapes the app EC2 via node_exporter (port 9100).
-# ─────────────────────────────────────────────────────────────────────────────
-
+# EC2 MONITORING
+# Prometheus + Grafana
 resource "aws_instance" "monitoring" {
   ami                    = data.aws_ami.monitoring.id
   instance_type          = var.monitoring_instance_type
@@ -297,18 +273,12 @@ resource "aws_instance" "monitoring" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring" })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SSM PARAMETER STORE — Inline (staging-specific)
-#
-# Convention: /chatwoot/{env}/{VARIABLE_NAME}
-# Type SecureString: KMS-encrypted, sensitive values.
-# Type String: non-sensitive values.
-#
-# lifecycle { ignore_changes = [value] }: Terraform creates the parameter with
-# a placeholder value but does NOT overwrite it on subsequent applies.
-# Actual values must be set manually or via an init script.
-# ─────────────────────────────────────────────────────────────────────────────
-
+# SSM PARAMETER STORE
+# Convention : /chatwoot/{env}/{VARIABLE_NAME}
+# Type SecureString : chiffré par KMS, valeurs sensibles.
+# Type String : valeurs non-sensibles.
+# lifecycle { ignore_changes = [value] } : Terraform crée le paramètre avec
+# une valeur de substitution mais ne l'écrase PAS lors des applies suivants.
 resource "aws_ssm_parameter" "secret_key_base" {
   name  = "/chatwoot/${var.env}/SECRET_KEY_BASE"
   type  = "SecureString"
@@ -351,7 +321,7 @@ resource "aws_ssm_parameter" "grafana_password" {
   tags  = var.tags
 }
 
-# Tag de l'image Docker à déployer — mis à jour par la CI après chaque build.
+# Tag de l'image Docker à déployer, mis à jour par la CI après chaque build.
 # Rollback : aws ssm put-parameter --name /chatwoot/{env}/DOCKER_IMAGE_TAG --value <tag> --overwrite
 resource "aws_ssm_parameter" "docker_image_tag" {
   name  = "/chatwoot/${var.env}/DOCKER_IMAGE_TAG"

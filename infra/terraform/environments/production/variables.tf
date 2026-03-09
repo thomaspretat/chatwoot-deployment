@@ -93,8 +93,7 @@ variable "domain_name" {
   type        = string
 }
 
-# ── Secrets (SSM Parameter Store) ─────────────────────────────────────────────
-
+# Secrets (SSM Parameter Store)
 variable "secret_key_base" {
   description = "Rails secret key base"
   type        = string
@@ -131,8 +130,7 @@ variable "docker_image_tag" {
   default     = "latest"
 }
 
-# ── Tags ─────────────────────────────────────────────────────────────────────
-
+# Tags
 variable "tags" {
   description = "Common tags"
   type        = map(string)

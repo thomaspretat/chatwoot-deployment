@@ -21,10 +21,7 @@ provider "aws" {
   region = var.aws_region
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# AMI LOOKUPS — Fetch latest Packer-built AMIs automatically
-# ─────────────────────────────────────────────────────────────────────────────
-
+# RÉCUPÉRATION DES AMIs — Récupère automatiquement les dernières AMIs construites avec Packer
 data "aws_ami" "bastion" {
   most_recent = true
   owners      = ["self"]
@@ -70,11 +67,7 @@ data "aws_ami" "monitoring" {
   }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SHARED MODULES
-# These modules are reused between prod and staging with different variables.
-# ─────────────────────────────────────────────────────────────────────────────
-
+# Networking
 module "networking" {
   source = "../../modules/networking"
 
@@ -83,18 +76,14 @@ module "networking" {
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
   availability_zones   = var.availability_zones
-  enable_nat_gateway   = true  # 1 NAT GW per AZ (high availability)
+  enable_nat_gateway   = true  # 1 NAT GW par AZ (haute disponibilité)
   single_nat_gateway   = false
   tags                 = var.tags
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SECURITY GROUPS — Inline (production-specific)
-#
-# Cross-SG egress rules use CIDRs to avoid circular dependencies
-# (e.g. ALB SG → EC2 SG → ALB SG). Security is maintained via strict ingress rules.
-# ─────────────────────────────────────────────────────────────────────────────
-
+# GROUPES DE SÉCURITÉ
+# Les règles d'egress inter-SG utilisent des CIDRs pour éviter les dépendances circulaires
+# (ex. ALB SG → EC2 SG → ALB SG)
 resource "aws_security_group" "alb" {
   name        = "chatwoot-${var.env}-alb-sg"
   description = "Accept HTTPS/HTTP from Internet, forward to EC2 on port 3000"
@@ -115,7 +104,7 @@ resource "aws_security_group" "alb" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Egress to private subnets on app port (avoids circular reference with ec2_sg)
+  # Egress vers les sous-réseaux privés sur le port applicatif (évite la référence circulaire avec ec2_sg)
   egress {
     from_port   = 3000
     to_port     = 3000
@@ -138,7 +127,7 @@ resource "aws_security_group" "bastion" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
-  # SSH egress to private subnets (EC2 ASG) — no reference to ec2_sg
+  # Egress SSH vers les sous-réseaux privés (EC2 ASG) — sans référence à ec2_sg
   egress {
     from_port   = 2022
     to_port     = 2022
@@ -154,7 +143,7 @@ resource "aws_security_group" "ec2" {
   description = "Accessible only from ALB (port 3000) and Bastion (port 2022)"
   vpc_id      = module.networking.vpc_id
 
-  # Application traffic from ALB only
+  # Trafic applicatif depuis l'ALB uniquement
   ingress {
     from_port       = 3000
     to_port         = 3000
@@ -162,7 +151,7 @@ resource "aws_security_group" "ec2" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  # SSH from bastion only
+  # SSH depuis le bastion uniquement
   ingress {
     from_port       = 2022
     to_port         = 2022
@@ -170,7 +159,7 @@ resource "aws_security_group" "ec2" {
     security_groups = [aws_security_group.bastion.id]
   }
 
-  # node-exporter scraping from monitoring instance
+  # Scraping node-exporter depuis l'instance de monitoring
   ingress {
     from_port       = 9100
     to_port         = 9100
@@ -178,7 +167,7 @@ resource "aws_security_group" "ec2" {
     security_groups = [aws_security_group.monitoring.id]
   }
 
-  # redis-exporter scraping from monitoring instance
+  # Scraping redis-exporter depuis l'instance de monitoring
   ingress {
     from_port       = 9121
     to_port         = 9121
@@ -186,7 +175,7 @@ resource "aws_security_group" "ec2" {
     security_groups = [aws_security_group.monitoring.id]
   }
 
-  # Full egress: Docker image pull, Secrets Manager (HTTPS), S3, SSM
+  # Egress total : pull d'images Docker, Secrets Manager (HTTPS), S3, SSM
   egress {
     from_port   = 0
     to_port     = 0
@@ -227,10 +216,7 @@ resource "aws_security_group" "redis" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-redis-sg" })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# IAM — Users (Terraform/CI) + EC2 Role + Instance Profile
-# ─────────────────────────────────────────────────────────────────────────────
-
+# IAM — Utilisateurs (Terraform/CI) + Rôle EC2 + Profil d'instance
 module "iam" {
   source        = "../../modules/iam"
   env           = var.env
@@ -238,10 +224,7 @@ module "iam" {
   tags          = var.tags
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# S3 — Chatwoot storage (ACTIVE_STORAGE_SERVICE=amazon)
-# ─────────────────────────────────────────────────────────────────────────────
-
+# S3 — Stockage Chatwoot (ACTIVE_STORAGE_SERVICE=amazon)
 resource "aws_s3_bucket" "chatwoot" {
   bucket = var.s3_bucket_name
   tags   = merge(var.tags, { Name = var.s3_bucket_name })
@@ -283,12 +266,9 @@ resource "aws_s3_bucket_lifecycle_configuration" "chatwoot" {
   }
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# RDS PostgreSQL 16 — Multi-AZ, private subnet, encrypted
-# Chatwoot v4+ requires pgvector, natively supported on RDS PG16.
-# db:chatwoot_prepare enables the extension automatically on first deployment.
-# ─────────────────────────────────────────────────────────────────────────────
-
+# RDS PostgreSQL 16 — Multi-AZ, sous-réseau privé, chiffré
+# Chatwoot v4+ requiert pgvector, nativement supporté sur RDS PG16.
+# db:chatwoot_prepare active l'extension automatiquement au premier déploiement.
 resource "aws_db_subnet_group" "this" {
   name       = "chatwoot-${var.env}-db-subnet-group"
   subnet_ids = module.networking.private_subnet_ids
@@ -339,11 +319,8 @@ resource "aws_db_instance" "this" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-rds" })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ELASTICACHE REDIS 7 — Multi-AZ, TLS enabled (transit_encryption_enabled=true)
-# Use REDIS_URL=rediss:// (double s) + REDIS_OPENSSL_VERIFY_MODE=none
-# ─────────────────────────────────────────────────────────────────────────────
-
+# ELASTICACHE REDIS 7 — Multi-AZ, TLS activé (transit_encryption_enabled=true)
+# Utiliser REDIS_URL=rediss:// (double s) + REDIS_OPENSSL_VERIFY_MODE=none
 resource "aws_elasticache_subnet_group" "this" {
   name       = "chatwoot-${var.env}-redis-subnet-group"
   subnet_ids = module.networking.private_subnet_ids
@@ -374,15 +351,11 @@ resource "aws_elasticache_replication_group" "this" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-redis" })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ACM — TLS Certificate (validated manually via Cloudflare DNS)
-#
-# Step 1: terraform apply → creates the certificate in "Pending validation"
-# Step 2: terraform output acm_validation_record → copy the CNAME into Cloudflare
-# Step 3: wait for ACM validation (~5 min after DNS propagation)
-# Step 4: uncomment the HTTPS listener below + terraform apply
-# ─────────────────────────────────────────────────────────────────────────────
-
+# ACM — Certificat TLS (validé manuellement via DNS Cloudflare)
+# Étape 1 : terraform apply → crée le certificat en statut "Pending validation"
+# Étape 2 : terraform output acm_validation_record → copier le CNAME dans Cloudflare
+# Étape 3 : attendre la validation ACM (~5 min après propagation DNS)
+# Étape 4 : décommenter le listener HTTPS ci-dessous + terraform apply
 resource "aws_acm_certificate" "this" {
   domain_name       = var.domain_name
   validation_method = "DNS"
@@ -390,11 +363,8 @@ resource "aws_acm_certificate" "this" {
   tags = merge(var.tags, { Name = var.domain_name })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ALB — Application Load Balancer, multi-AZ, public subnets
-# Listener 80 → redirect 443
-# ─────────────────────────────────────────────────────────────────────────────
-
+# ALB — Application Load Balancer, multi-AZ, sous-réseaux publics
+# Listener 80 → redirection 443
 resource "aws_lb" "this" {
   name                       = "chatwoot-${var.env}-alb"
   internal                   = false
@@ -452,11 +422,8 @@ resource "aws_lb_listener" "http_redirect" {
 #   }
 # }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# BASTION — Single SSH entry point (can reach both AZs within the VPC)
-# ProxyJump : ssh -J ubuntu@<bastion_ip> ubuntu@<ec2_private_ip>
-# ─────────────────────────────────────────────────────────────────────────────
-
+# BASTION
+# ProxyJump : ssh -J ubuntu@<bastion_ip> ubuntu@<ec2_ip_privée>
 resource "aws_instance" "bastion" {
   ami                         = data.aws_ami.bastion.id
   instance_type               = var.bastion_instance_type
@@ -481,13 +448,7 @@ resource "aws_eip" "bastion" {
   tags     = merge(var.tags, { Name = "chatwoot-${var.env}-bastion-eip" })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ASG — Launch Template + Auto Scaling Group + scaling policies
-# Rolling update via Instance Refresh (min_healthy_percentage=100).
-# 100% = new instance must be healthy before old one is terminated (one at a time).
-# db:chatwoot_prepare runs at boot on every instance.
-# ─────────────────────────────────────────────────────────────────────────────
-
+# ASG — Template de lancement + Groupe d'auto-scaling + politiques de mise à l'échelle
 resource "aws_launch_template" "this" {
   name_prefix   = "chatwoot-${var.env}-"
   image_id      = data.aws_ami.chatwoot.id
@@ -603,18 +564,14 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
   alarm_actions       = [aws_autoscaling_policy.scale_down.arn]
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MONITORING — Single instance in AZ-a (outside ASG)
-# Prometheus (metrics collection) + Grafana (dashboards).
-# Scrapes app instances via node_exporter (port 9100) and redis_exporter (port 9121).
-# ─────────────────────────────────────────────────────────────────────────────
-
+# MONITORING — Instance unique en AZ-a (hors ASG)
+# Prometheus + Grafana
 resource "aws_security_group" "monitoring" {
   name        = "chatwoot-${var.env}-monitoring-sg"
   description = "Prometheus + Grafana — accessible from Bastion (SSH) and scrapes EC2"
   vpc_id      = module.networking.vpc_id
 
-  # Grafana (from allowed_ssh_cidrs for dashboard access)
+  # Grafana (depuis allowed_ssh_cidrs pour accès au tableau de bord)
   ingress {
     from_port   = 3000
     to_port     = 3000
@@ -622,7 +579,7 @@ resource "aws_security_group" "monitoring" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
-  # Prometheus (from allowed_ssh_cidrs for direct access)
+  # Prometheus (depuis allowed_ssh_cidrs pour accès direct)
   ingress {
     from_port   = 9090
     to_port     = 9090
@@ -630,7 +587,7 @@ resource "aws_security_group" "monitoring" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
-  # SSH from bastion only
+  # SSH depuis le bastion uniquement
   ingress {
     from_port       = 2022
     to_port         = 2022
@@ -638,7 +595,6 @@ resource "aws_security_group" "monitoring" {
     security_groups = [aws_security_group.bastion.id]
   }
 
-  # Full egress: Docker pulls, SSM, scraping app instances
   egress {
     from_port   = 0
     to_port     = 0
@@ -667,14 +623,11 @@ resource "aws_instance" "monitoring" {
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring", Role = "monitoring" })
 }
 
-# ─────────────────────────────────────────────────────────────────────────────
-# SSM PARAMETER STORE — Inline (production-specific)
-#
-# Convention: /chatwoot/{env}/{VARIABLE_NAME}
-# Type SecureString: KMS-encrypted, sensitive values from terraform.tfvars.
-# Type String: non-sensitive values (endpoints computed by Terraform).
-# ─────────────────────────────────────────────────────────────────────────────
 
+# SSM PARAMETER STORE
+# Convention : /chatwoot/{env}/{VARIABLE_NAME}
+# Type SecureString : chiffré par KMS, valeurs sensibles depuis terraform.tfvars.
+# Type String : valeurs non-sensibles (endpoints calculés par Terraform).
 resource "aws_ssm_parameter" "secret_key_base" {
   name  = "/chatwoot/${var.env}/SECRET_KEY_BASE"
   type  = "SecureString"
@@ -717,7 +670,7 @@ resource "aws_ssm_parameter" "grafana_password" {
   tags  = var.tags
 }
 
-# Tag de l'image Docker à déployer — mis à jour par la CI après chaque build.
+# Tag de l'image Docker à déployer, mis à jour par la CI après chaque build.
 # Rollback : aws ssm put-parameter --name /chatwoot/{env}/DOCKER_IMAGE_TAG --value <tag> --overwrite
 resource "aws_ssm_parameter" "docker_image_tag" {
   name  = "/chatwoot/${var.env}/DOCKER_IMAGE_TAG"

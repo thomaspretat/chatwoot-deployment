@@ -8,8 +8,7 @@ variable "env" {
   type        = string
 }
 
-# ── Networking ──────────────────────────────────────────────────────────────
-
+# Networking
 variable "vpc_cidr" {
   description = "CIDR block for the staging VPC"
   type        = string
@@ -25,46 +24,40 @@ variable "availability_zones" {
   type        = list(string)
 }
 
-# ── Accès SSH ────────────────────────────────────────────────────────────────
-
+# Accès SSH
 variable "allowed_ssh_cidrs" {
   description = "CIDR blocks allowed for SSH and to access Grafana/Prometheus"
   type        = list(string)
 }
 
-# ── EC2 Bastion ──────────────────────────────────────────────────────────────
-
+# EC2 Bastion
 variable "bastion_instance_type" {
   description = "Instance type for the bastion EC2"
   type        = string
   default     = "t3.micro"
 }
 
-# ── EC2 App (Chatwoot + postgres + redis Docker) ─────────────────────────────
-
+# EC2 App (Chatwoot + postgres + redis Docker)
 variable "app_instance_type" {
   description = "Instance type for the app EC2"
   type        = string
   default     = "t3.small"
 }
 
-# ── EC2 Monitoring (Prometheus + Grafana) ────────────────────────────────────
-
+# EC2 Monitoring (Prometheus + Grafana)
 variable "monitoring_instance_type" {
   description = "Instance type for the monitoring EC2"
   type        = string
   default     = "t3.micro"
 }
 
-# ── SSH Key ──────────────────────────────────────────────────────────────────
-
+# SSH Key 
 variable "key_name" {
   description = "SSH key pair name"
   type        = string
 }
 
-# ── Secrets (SSM Parameter Store) ─────────────────────────────────────────────
-
+# Secrets (SSM Parameter Store)
 variable "secret_key_base" {
   description = "Rails secret key base"
   type        = string
@@ -112,8 +105,7 @@ variable "docker_image_tag" {
   default     = "latest"
 }
 
-# ── Tags ─────────────────────────────────────────────────────────────────────
-
+# Tags
 variable "tags" {
   description = "Common tags applied to all resources"
   type        = map(string)
