@@ -1,4 +1,4 @@
-# ─── IAM User (Terraform local + CI/CD) ───────────────────────────
+# IAM User (Terraform local + CI/CD)
 
 resource "aws_iam_user" "chatwoot" {
   name = "chatwoot-${var.env}"
@@ -14,7 +14,7 @@ resource "aws_iam_access_key" "chatwoot" {
   user = aws_iam_user.chatwoot.name
 }
 
-# ─── IAM Role pour les instances EC2 ───────────────────────────────
+# IAM Role pour les instances EC2
 
 resource "aws_iam_role" "ec2" {
   name = "chatwoot-${var.env}-ec2-role"
@@ -61,7 +61,7 @@ resource "aws_iam_role_policy" "ec2_s3" {
   })
 }
 
-# ec2:DescribeTags — nécessaire pour que chatwoot-start.sh lise le tag Environment
+# ec2:DescribeTags — nécessaire pour que chatwoot-start.sh lise le tag Environment et ec2:DescribeInstances pour monitorer (get les instances via ec2_sd_configs)
 resource "aws_iam_role_policy" "ec2_describe_tags" {
   name = "chatwoot-${var.env}-ec2-describe-tags"
   role = aws_iam_role.ec2.id
@@ -70,7 +70,7 @@ resource "aws_iam_role_policy" "ec2_describe_tags" {
     Version = "2012-10-17"
     Statement = [{
       Effect   = "Allow"
-      Action   = ["ec2:DescribeTags"]
+      Action   = ["ec2:DescribeTags", "ec2:DescribeInstances"]
       Resource = "*"
     }]
   })
