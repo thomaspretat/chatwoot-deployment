@@ -21,7 +21,7 @@
         /tmp/aws/install
         rm -rf /tmp/awscliv2.zip /tmp/aws
 
-    #-----------------Chatwoot provision
+    # Chatwoot provision
 
     - name: Installer Docker
       shell: curl -fsSL https://get.docker.com | sh # Utiliser le convenient script disponible plus simple
@@ -78,7 +78,7 @@
     - name: Pré-pull de l'image Chatwoot # cache les layers dans l'AMI pour un pull plus rapide lors du script de provisionning
       shell: cd /app/chatwoot && docker compose -f docker-compose-prod.yml pull
 
-    #-----------------SSH Hardening
+    # SSH Hardening
 
     - name: Changer le port SSH à 2022
       lineinfile:
@@ -143,6 +143,12 @@
       ufw:
         rule: allow
         port: "80"
+        proto: tcp
+
+    - name: Autoriser le port 9121 (redis-exporter)
+      ufw:
+        rule: allow
+        port: "9121"
         proto: tcp
 
     - name: Autoriser le port 9100 (node-exporter)

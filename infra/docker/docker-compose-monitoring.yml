@@ -12,6 +12,8 @@ services:
     image: grafana/grafana:latest
     volumes:
       - grafdata:/var/lib/grafana
+      - /app/monitoring/grafana/provisioning:/etc/grafana/provisioning
+      - /app/monitoring/grafana/dashboards:/var/lib/grafana/dashboards
     ports:
       - "3000:3000"
     environment:
@@ -25,9 +27,9 @@ services:
       - /sys:/host/sys:ro
       - /:/rootfs:ro
     command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
     ports:
       - "9100:9100"
     pid: host

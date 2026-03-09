@@ -1,163 +1,186 @@
 - hosts: all
   become: true
   tasks:
-  - name: Update apt
-    apt:
-      update_cache: true
-      upgrade: dist
+    - name: Update apt
+      apt:
+        update_cache: true
+        upgrade: dist
 
-  - name: Installer les packages utiles
-    apt:
-      name:
-        - curl
-        - unzip
-        - fail2ban
-        - ufw
+    - name: Installer les packages utiles
+      apt:
+        name:
+          - curl
+          - unzip
+          - fail2ban
+          - ufw
 
-  - name: Installer AWS CLI v2
-    shell: |
-      curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
-      unzip -q /tmp/awscliv2.zip -d /tmp
-      /tmp/aws/install
-      rm -rf /tmp/awscliv2.zip /tmp/aws
+    - name: Installer AWS CLI v2
+      shell: |
+        curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+        unzip -q /tmp/awscliv2.zip -d /tmp
+        /tmp/aws/install
+        rm -rf /tmp/awscliv2.zip /tmp/aws
 
-#-----------------Monitoring provision
+    # Monitoring provision
 
-  - name: Installer Docker
-    shell: curl -fsSL https://get.docker.com | sh
+    - name: Installer Docker
+      shell: curl -fsSL https://get.docker.com | sh
 
-  - name: Créer le dossier de l'app
-    file:
-      path: /app/monitoring
-      state: directory
+    - name: Créer les dossiers de l'app
+      file:
+        path: "{{ item }}"
+        state: directory
+      loop:
+        - /app/monitoring
+        - /app/monitoring/grafana/provisioning/dashboards
+        - /app/monitoring/grafana/provisioning/datasources
+        - /app/monitoring/grafana/dashboards
 
-  - name: Copier le docker-compose monitoring
-    copy:
-      src: ../docker/docker-compose-monitoring.yml
-      dest: /app/monitoring/docker-compose-monitoring.yml
+    - name: Copier le docker-compose monitoring
+      copy:
+        src: ../docker/docker-compose-monitoring.yml
+        dest: /app/monitoring/docker-compose-monitoring.yml
 
-  - name: Copier la config Prometheus (production)
-    copy:
-      src: ../docker/config/prometheus-prod.yml
-      dest: /app/monitoring/prometheus-prod.yml
+    - name: Copier le provisioning Grafana (dashboards provider)
+      copy:
+        src: ../docker/grafana/provisioning/dashboards/dashboards.yaml
+        dest: /app/monitoring/grafana/provisioning/dashboards/dashboards.yaml
 
-  - name: Copier la config Prometheus (staging)
-    copy:
-      src: ../docker/config/prometheus-staging.yml
-      dest: /app/monitoring/prometheus-staging.yml
+    - name: Copier le provisioning Grafana (datasources)
+      copy:
+        src: ../docker/grafana/provisioning/datasources/datasources.yaml
+        dest: /app/monitoring/grafana/provisioning/datasources/datasources.yaml
 
-  - name: Copier le script de démarrage monitoring
-    copy:
-      src: ../docker/scripts/monitoring-start.sh
-      dest: /app/monitoring/monitoring-start.sh
-      mode: '0755'
+    - name: Copier les dashboards Grafana
+      copy:
+        src: "{{ item }}"
+        dest: /app/monitoring/grafana/dashboards/
+      loop:
+        - ../docker/grafana/dashboards/node-controller-dashboard.json
+        - ../docker/grafana/dashboards/redis-controller-dashboard.json
 
-  - name: Créer le service systemd monitoring
-    copy:
-      dest: /etc/systemd/system/monitoring.service
-      content: |
-        [Unit]
-        Description=Monitoring startup (SSM secrets + Docker Compose)
-        After=network-online.target docker.service
-        Wants=network-online.target docker.service
+    - name: Copier la config Prometheus (production)
+      copy:
+        src: ../docker/config/prometheus-prod.yml
+        dest: /app/monitoring/prometheus-prod.yml
 
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        ExecStart=/app/monitoring/monitoring-start.sh
+    - name: Copier la config Prometheus (staging)
+      copy:
+        src: ../docker/config/prometheus-staging.yml
+        dest: /app/monitoring/prometheus-staging.yml
 
-        [Install]
-        WantedBy=multi-user.target
+    - name: Copier le script de démarrage monitoring
+      copy:
+        src: ../docker/scripts/monitoring-start.sh
+        dest: /app/monitoring/monitoring-start.sh
+        mode: "0755"
 
-  - name: Activer le service monitoring
-    systemd_service:
-      name: monitoring
-      enabled: yes
-      daemon_reload: yes
+    - name: Créer le service systemd monitoring
+      copy:
+        dest: /etc/systemd/system/monitoring.service
+        content: |
+          [Unit]
+          Description=Monitoring startup (SSM secrets + Docker Compose)
+          After=network-online.target docker.service
+          Wants=network-online.target docker.service
 
-  - name: Pré-pull des images monitoring # cache les layers dans l'AMI pour un pull plus rapide lors du script de provisionning
-    shell: cd /app/monitoring && docker compose -f docker-compose-monitoring.yml pull
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          ExecStart=/app/monitoring/monitoring-start.sh
 
-#-----------------SSH Hardening
+          [Install]
+          WantedBy=multi-user.target
 
-  - name: Changer le port SSH à 2022
-    lineinfile:
-      path: /etc/ssh/sshd_config
-      regexp: '^#?Port '
-      line: 'Port 2022'
+    - name: Activer le service monitoring
+      systemd_service:
+        name: monitoring
+        enabled: yes
+        daemon_reload: yes
 
-  - name: Désactiver le login root SSH
-    lineinfile:
-      path: /etc/ssh/sshd_config
-      regexp: '^#?PermitRootLogin'
-      line: 'PermitRootLogin no'
+    - name: Pré-pull des images monitoring # cache les layers dans l'AMI pour un pull plus rapide lors du script de provisionning
+      shell: cd /app/monitoring && docker compose -f docker-compose-monitoring.yml pull
 
-  - name: Désactiver authentification par mot de passe
-    lineinfile:
-      path: /etc/ssh/sshd_config
-      regexp: '^#?PasswordAuthentication'
-      line: 'PasswordAuthentication no'
+    # SSH Hardening
 
-  - name: Configurer fail2ban pour SSH
-    copy:
-      dest: /etc/fail2ban/jail.local
-      content: |
-        [sshd]
-        enabled = true
-        port = 2022
-        maxretry = 3
-        bantime = 3600
-        findtime = 600
+    - name: Changer le port SSH à 2022
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?Port "
+        line: "Port 2022"
 
-  - name: Activer et démarrer fail2ban
-    systemd_service:
-      name: fail2ban
-      enabled: yes
-      state: started
+    - name: Désactiver le login root SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PermitRootLogin"
+        line: "PermitRootLogin no"
 
-#-----------------UFW
+    - name: Désactiver authentification par mot de passe
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^#?PasswordAuthentication"
+        line: "PasswordAuthentication no"
 
-  - name: Bloquer tout le trafic entrant par défaut
-    ufw:
-      default: deny
-      direction: incoming
+    - name: Configurer fail2ban pour SSH
+      copy:
+        dest: /etc/fail2ban/jail.local
+        content: |
+          [sshd]
+          enabled = true
+          port = 2022
+          maxretry = 3
+          bantime = 3600
+          findtime = 600
 
-  - name: Autoriser tout le trafic sortant par défaut
-    ufw:
-      default: allow
-      direction: outgoing
+    - name: Activer et démarrer fail2ban
+      systemd_service:
+        name: fail2ban
+        enabled: yes
+        state: started
 
-  - name: Autoriser SSH sur le port 2022
-    ufw:
-      rule: allow
-      port: '2022'
-      proto: tcp
+    # UFW
 
-  - name: Autoriser Prometheus (port 9090)
-    ufw:
-      rule: allow
-      port: '9090'
-      proto: tcp
+    - name: Bloquer tout le trafic entrant par défaut
+      ufw:
+        default: deny
+        direction: incoming
 
-  - name: Autoriser Grafana (port 3000)
-    ufw:
-      rule: allow
-      port: '3000'
-      proto: tcp
+    - name: Autoriser tout le trafic sortant par défaut
+      ufw:
+        default: allow
+        direction: outgoing
 
-  - name: Autoriser node-exporter (port 9100)
-    ufw:
-      rule: allow
-      port: '9100'
-      proto: tcp
+    - name: Autoriser SSH sur le port 2022
+      ufw:
+        rule: allow
+        port: "2022"
+        proto: tcp
 
-  - name: Activer UFW
-    ufw:
-      state: enabled
+    - name: Autoriser Prometheus (port 9090)
+      ufw:
+        rule: allow
+        port: "9090"
+        proto: tcp
 
-#-----------------Restart services
+    - name: Autoriser Grafana (port 3000)
+      ufw:
+        rule: allow
+        port: "3000"
+        proto: tcp
 
-  - name: Redémarrer sshd
-    systemd_service:
-      name: ssh
-      state: restarted
+    - name: Autoriser node-exporter (port 9100)
+      ufw:
+        rule: allow
+        port: "9100"
+        proto: tcp
+
+    - name: Activer UFW
+      ufw:
+        state: enabled
+
+    # Restart services
+
+    - name: Redémarrer sshd
+      systemd_service:
+        name: ssh
+        state: restarted
