@@ -188,6 +188,14 @@ resource "aws_security_group" "app" {
     security_groups = [aws_security_group.monitoring.id]
   }
 
+  # redis_exporter (port 9121) — depuis l'EC2 de monitoring uniquement
+  ingress {
+    from_port       = 9121
+    to_port         = 9121
+    protocol        = "tcp"
+    security_groups = [aws_security_group.monitoring.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
