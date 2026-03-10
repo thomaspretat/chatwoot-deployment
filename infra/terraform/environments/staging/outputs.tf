@@ -10,7 +10,7 @@ output "bastion_public_ip" {
 
 output "app_public_ip" {
   description = "Public IP of the Chatwoot EC2 (persistent Elastic IP)"
-  value       = data.terraform_remote_state.persistent.outputs.staging_app_public_ip
+  value       = aws_eip.app.public_ip
 }
 
 output "app_private_ip" {
@@ -20,12 +20,12 @@ output "app_private_ip" {
 
 output "monitoring_public_ip" {
   description = "Public IP of the monitoring EC2 (persistent Elastic IP)"
-  value       = data.terraform_remote_state.persistent.outputs.staging_monitoring_public_ip
+  value       = aws_eip.monitoring.public_ip
 }
 
 output "grafana_url" {
   description = "Grafana URL (access restricted to team IPs)"
-  value       = "http://${data.terraform_remote_state.persistent.outputs.staging_monitoring_public_ip}:3000"
+  value       = "http://${aws_eip.monitoring.public_ip}:3000"
 }
 
 output "chatwoot_url" {
