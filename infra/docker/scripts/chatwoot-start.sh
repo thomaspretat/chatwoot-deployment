@@ -35,6 +35,10 @@ done > /app/chatwoot/.env
 
 chmod 600 /app/chatwoot/.env
 
+# Se connecter au registry privé GitLab
+source /app/chatwoot/.env
+echo "$GITLAB_REGISTRY_TOKEN" | docker login registry.gitlab.com -u deploy-token --password-stdin
+
 # Lancer les containers
 cd "/app/chatwoot"
 docker compose -f "$COMPOSE_FILE" pull
