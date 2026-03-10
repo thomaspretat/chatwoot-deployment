@@ -1,6 +1,6 @@
 services:
   base: &base
-    image: chatwoot/chatwoot:latest
+    image: registry.gitlab.com/batch23-gr1/chatwoot:staging
     env_file: .env
     volumes:
       - storage_data:/app/storage
@@ -48,9 +48,9 @@ services:
       - /sys:/host/sys:ro
       - /:/rootfs:ro
     command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
     ports:
       - "9100:9100"
     pid: host
