@@ -21,14 +21,15 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Référence au state persistent (EIP fixes)
-data "terraform_remote_state" "persistent" {
-  backend = "s3"
-  config = {
-    bucket = "chatwoot-batch23-terraform-state"
-    key    = "persistent/terraform.tfstate"
-    region = "eu-west-3"
-  }
+# EIP fixes pour garder des IPs stables entre destroy/apply
+resource "aws_eip" "app" {
+  domain = "vpc"
+  tags   = merge(var.tags, { Name = "chatwoot-${var.env}-app-eip" })
+}
+
+resource "aws_eip" "monitoring" {
+  domain = "vpc"
+  tags   = merge(var.tags, { Name = "chatwoot-${var.env}-monitoring-eip" })
 }
 
 # RÉCUPÉRATION DES AMIs — Récupère automatiquement les dernières AMIs construites avec Packer
@@ -260,7 +261,7 @@ resource "aws_instance" "app" {
 }
 
 resource "aws_eip_association" "app" {
-  allocation_id = data.terraform_remote_state.persistent.outputs.staging_app_eip_id
+  allocation_id = aws_eip.app.id
   instance_id   = aws_instance.app.id
 }
 
@@ -285,6 +286,6 @@ resource "aws_instance" "monitoring" {
 }
 
 resource "aws_eip_association" "monitoring" {
-  allocation_id = data.terraform_remote_state.persistent.outputs.staging_monitoring_eip_id
+  allocation_id = aws_eip.monitoring.id
   instance_id   = aws_instance.monitoring.id
 }

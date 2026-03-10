@@ -19,9 +19,10 @@ else
   COMPOSE_FILE="docker-compose-staging.yml"
 fi
 
-# Récupérer tous les paramètres SSM du path /chatwoot/{env}/
+# Récupérer tous les paramètres SSM du path /chatwoot/{env}/ (--recursive pour paginer automatiquement au-delà de 10 résultats)
 PARAMETERS=$(aws ssm get-parameters-by-path \
   --path "/chatwoot/$SSM_ENV/" \
+  --recursive \
   --with-decryption \
   --region "eu-west-3" \
   --query "Parameters[*].[Name,Value]" \

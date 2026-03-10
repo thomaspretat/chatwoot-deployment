@@ -474,6 +474,14 @@ resource "aws_launch_template" "this" {
     tags          = merge(var.tags, { Name = "chatwoot-${var.env}-app", Role = "chatwoot" })
   }
 
+  # S'assurer que les paramètres SSM existent avant de lancer les instances pour que les db s'initialisent bien
+  depends_on = [
+    aws_ssm_parameter.postgres_host,
+    aws_ssm_parameter.redis_url,
+    aws_ssm_parameter.redis_addr,
+    aws_ssm_parameter.s3_bucket_name,
+  ]
+
   lifecycle {
     create_before_destroy = true
   }
