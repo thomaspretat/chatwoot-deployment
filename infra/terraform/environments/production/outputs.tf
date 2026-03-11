@@ -42,8 +42,8 @@ output "acm_validation_record" {
   description = "CNAME to add in Cloudflare for ACM certificate validation"
   value = {
     for dvo in aws_acm_certificate.this.domain_validation_options : dvo.domain_name => {
-      name   = dvo.resource_record_name
-      value  = dvo.resource_record_value
+      name  = dvo.resource_record_name
+      value = dvo.resource_record_value
     }
   }
 }
