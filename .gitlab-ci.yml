@@ -3,6 +3,11 @@
 #   AWS_SECRET_ACCESS_KEY
 #   AWS_DEFAULT_REGION
 
+default:
+  tags:
+    - chatwoot-runner
+
+
 stages:
   - validate
   - build-ami

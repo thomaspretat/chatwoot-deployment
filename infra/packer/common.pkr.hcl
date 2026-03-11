@@ -10,6 +10,10 @@ packer {
       version = "~> 1"
       source = "github.com/hashicorp/ansible"
     }
+    amazon-ami-management = {
+      version = ">= 1.0.0"
+      source  = "github.com/wata727/amazon-ami-management"
+    }
   }
 }
 
