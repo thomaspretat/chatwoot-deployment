@@ -22,7 +22,9 @@ stages:
 
 format:
   stage: validate
-  image: hashicorp/terraform:1.10
+  image:
+    name: hashicorp/terraform:1.10
+    entrypoint: [""]
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
@@ -30,7 +32,9 @@ format:
 
 validate-staging:
   stage: validate
-  image: hashicorp/terraform:1.10
+  image:
+    name: hashicorp/terraform:1.10
+    entrypoint: [""]
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
@@ -39,7 +43,9 @@ validate-staging:
 
 validate-production:
   stage: validate
-  image: hashicorp/terraform:1.10
+  image:
+    name: hashicorp/terraform:1.10
+    entrypoint: [""]
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
@@ -105,7 +111,9 @@ build-ami:bastion:
 
 plan-staging:
   stage: plan-staging
-  image: hashicorp/terraform:1.10
+  image:
+    name: hashicorp/terraform:1.10
+    entrypoint: [""]
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
@@ -122,7 +130,9 @@ plan-staging:
 
 apply-staging:
   stage: apply-staging
-  image: hashicorp/terraform:1.10
+  image:
+    name: hashicorp/terraform:1.10
+    entrypoint: [""]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
   script:
@@ -135,7 +145,9 @@ apply-staging:
 
 plan-production:
   stage: plan-production
-  image: hashicorp/terraform:1.10
+  image:
+    name: hashicorp/terraform:1.10
+    entrypoint: [""]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
   script:
@@ -152,7 +164,9 @@ plan-production:
 
 apply-production:
   stage: apply-production
-  image: hashicorp/terraform:1.10
+  image:
+    name: hashicorp/terraform:1.10
+    entrypoint: [""]
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
