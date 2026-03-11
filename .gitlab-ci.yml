@@ -57,7 +57,9 @@ validate-production:
 
 .packer-build:
   stage: build-ami
-  image: hashicorp/packer:1.11
+  image:
+    name: hashicorp/packer:1.11
+    entrypoint: [""]
   before_script:
     - apk add --no-cache ansible
     - cd infra/packer
