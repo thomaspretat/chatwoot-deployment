@@ -17,7 +17,6 @@ stages:
   - apply-production
 
 
-
 # VALIDATE — toutes les MRs
 
 format:
@@ -26,7 +25,7 @@ format:
     name: hashicorp/terraform:1.10
     entrypoint: [""]
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging"
   script:
     - terraform fmt -check -recursive infra/terraform/
 
@@ -36,7 +35,7 @@ validate-staging:
     name: hashicorp/terraform:1.10
     entrypoint: [""]
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging"
   script:
     - terraform -chdir=infra/terraform/environments/staging init -backend=false
     - terraform -chdir=infra/terraform/environments/staging validate
@@ -47,7 +46,7 @@ validate-production:
     name: hashicorp/terraform:1.10
     entrypoint: [""]
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging"
   script:
     - terraform -chdir=infra/terraform/environments/production init -backend=false
     - terraform -chdir=infra/terraform/environments/production validate
@@ -67,7 +66,7 @@ validate-production:
 build-ami:chatwoot:
   extends: .packer-build
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "staging"
       changes:
         - infra/packer/common.pkr.hcl
         - infra/packer/chatwoot.pkr.hcl
@@ -82,7 +81,7 @@ build-ami:chatwoot:
 build-ami:monitoring:
   extends: .packer-build
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "staging"
       changes:
         - infra/packer/common.pkr.hcl
         - infra/packer/monitoring.pkr.hcl
@@ -97,7 +96,7 @@ build-ami:monitoring:
 build-ami:bastion:
   extends: .packer-build
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_COMMIT_BRANCH == "staging"
       changes:
         - infra/packer/common.pkr.hcl
         - infra/packer/bastion.pkr.hcl
@@ -115,7 +114,7 @@ plan-staging:
     name: hashicorp/terraform:1.10
     entrypoint: [""]
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
   script:
     - terraform -chdir=infra/terraform/environments/staging init
     - terraform -chdir=infra/terraform/environments/staging plan -no-color -out=staging.tfplan
@@ -133,8 +132,11 @@ apply-staging:
   image:
     name: hashicorp/terraform:1.10
     entrypoint: [""]
+  needs:
+    - plan-staging
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
   script:
     - terraform -chdir=infra/terraform/environments/staging init
     - terraform -chdir=infra/terraform/environments/staging apply -auto-approve
@@ -167,6 +169,8 @@ apply-production:
   image:
     name: hashicorp/terraform:1.10
     entrypoint: [""]
+  needs:
+    - plan-production
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
