@@ -1,6 +1,6 @@
 services:
   base: &base
-    image: registry.gitlab.com/batch23-gr1/chatwoot:staging
+    image: registry.gitlab.com/batch23-gr1/chatwoot/chatwoot:staging
     env_file: .env
     volumes:
       - storage_data:/app/storage

@@ -37,7 +37,7 @@ chmod 600 /app/chatwoot/.env
 
 # Se connecter au registry privé GitLab
 source /app/chatwoot/.env
-echo "$GITLAB_REGISTRY_TOKEN" | docker login registry.gitlab.com -u deploy-token --password-stdin
+echo "$GITLAB_REGISTRY_TOKEN" | docker login registry.gitlab.com -u gitlab+deploy-token-12554657 --password-stdin
 
 # Lancer les containers
 cd "/app/chatwoot"
