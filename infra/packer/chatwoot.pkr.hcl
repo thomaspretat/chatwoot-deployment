@@ -15,6 +15,7 @@ build {
   sources = ["source.amazon-ebs.chatwoot"]
   provisioner "ansible" {
     playbook_file = "../ansible/chatwoot-playbook.yml"
+    use_proxy     = false
   }
   post-processor "amazon-ami-management" {
     regions       = ["eu-west-3"]
