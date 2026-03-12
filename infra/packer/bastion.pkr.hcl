@@ -14,7 +14,8 @@ source "amazon-ebs" "bastion" {
 build {
   sources = ["source.amazon-ebs.bastion"]
   provisioner "ansible" {
-    playbook_file = "../ansible/bastion-playbook.yml"
+    playbook_file   = "../ansible/bastion-playbook.yml"
+    extra_arguments = ["--become"]
   }
   post-processor "amazon-ami-management" {
     regions       = ["eu-west-3"]
