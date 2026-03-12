@@ -15,6 +15,7 @@ build {
   sources = ["source.amazon-ebs.monitoring"]
   provisioner "ansible" {
     playbook_file = "../ansible/monitoring-playbook.yml"
+    use_proxy     = false
   }
   post-processor "amazon-ami-management" {
     regions       = ["eu-west-3"]
