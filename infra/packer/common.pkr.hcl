@@ -17,6 +17,18 @@ packer {
   }
 }
 
+variable "gitlab_registry_user" {
+  type      = string
+  default   = env("GITLAB_REGISTRY_USER")
+  sensitive = true
+}
+
+variable "gitlab_registry_token" {
+  type      = string
+  default   = env("GITLAB_REGISTRY_TOKEN")
+  sensitive = true
+}
+
 data "amazon-ami" "ubuntu" {
   filters = {
     name                = "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"
