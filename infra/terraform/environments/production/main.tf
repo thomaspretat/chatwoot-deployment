@@ -76,7 +76,7 @@ module "networking" {
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
   availability_zones   = var.availability_zones
-  enable_nat_gateway   = true  # 1 NAT GW par AZ (haute disponibilité)
+  enable_nat_gateway   = true # 1 NAT GW par AZ (haute disponibilité)
   single_nat_gateway   = false
   tags                 = var.tags
 }
@@ -218,11 +218,11 @@ resource "aws_security_group" "redis" {
 
 # IAM — Utilisateurs (Terraform/CI) + Rôle EC2 + Profil d'instance
 module "iam" {
-  source        = "../../modules/iam"
-  env           = var.env
+  source           = "../../modules/iam"
+  env              = var.env
   enable_s3_policy = true
   s3_bucket_arn    = aws_s3_bucket.chatwoot.arn
-  tags          = var.tags
+  tags             = var.tags
 }
 
 # S3 — Stockage Chatwoot (ACTIVE_STORAGE_SERVICE=amazon)
@@ -312,10 +312,10 @@ resource "aws_db_instance" "this" {
   backup_window           = "03:00-04:00"
   maintenance_window      = "Mon:04:00-Mon:05:00"
 
-  deletion_protection               = false
-  skip_final_snapshot               = false
-  final_snapshot_identifier         = "chatwoot-${var.env}-final"
-  performance_insights_enabled      = true
+  deletion_protection          = false
+  skip_final_snapshot          = false
+  final_snapshot_identifier    = "chatwoot-${var.env}-final"
+  performance_insights_enabled = true
 
   tags = merge(var.tags, { Name = "chatwoot-${var.env}-rds" })
 }
