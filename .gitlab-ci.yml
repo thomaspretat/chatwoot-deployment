@@ -68,7 +68,6 @@ build-ami:chatwoot:
       changes:
         - infra/packer/common.pkr.hcl
         - infra/packer/chatwoot.pkr.hcl
-        - infra/packer/ansible.cfg
         - infra/ansible/chatwoot-playbook.yml
         - infra/docker/docker-compose-staging.yml
         - infra/docker/docker-compose-prod.yml
@@ -84,7 +83,6 @@ build-ami:monitoring:
       changes:
         - infra/packer/common.pkr.hcl
         - infra/packer/monitoring.pkr.hcl
-        - infra/packer/ansible.cfg
         - infra/ansible/monitoring-playbook.yml
         - infra/docker/docker-compose-monitoring.yml
         - infra/docker/scripts/monitoring-start.sh
@@ -98,7 +96,6 @@ build-ami:bastion:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
       changes:
-        - infra/packer/ansible.cfg
         - infra/packer/bastion.pkr.hcl
         - infra/packer/common.pkr.hcl
         - infra/ansible/bastion-playbook.yml
