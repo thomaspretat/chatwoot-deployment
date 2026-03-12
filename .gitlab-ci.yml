@@ -7,15 +7,13 @@ default:
   tags:
     - chatwoot-runner
 
-
 stages:
   - validate
   - build-ami
   - plan-staging
-  - apply-staging
   - plan-production
+  - apply-staging
   - apply-production
-
 
 # VALIDATE — toutes les MRs
 
@@ -50,8 +48,6 @@ validate-production:
   script:
     - terraform -chdir=infra/terraform/environments/production init -backend=false
     - terraform -chdir=infra/terraform/environments/production validate
-
-
 
 # BUILD AMI — rebuild en fonction de ce qu'il y a de changé
 
@@ -106,8 +102,6 @@ build-ami:bastion:
   script:
     - packer build -only=amazon-ebs.bastion .
 
-
-
 # PLAN STAGING — toutes les Merge Requests
 
 plan-staging:
@@ -116,7 +110,7 @@ plan-staging:
     name: hashicorp/terraform:1.10
     entrypoint: [""]
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
   script:
     - terraform -chdir=infra/terraform/environments/staging init
     - terraform -chdir=infra/terraform/environments/staging plan -no-color -out=staging.tfplan
@@ -125,7 +119,22 @@ plan-staging:
       - infra/terraform/environments/staging/staging.tfplan
     expire_in: 1 day
 
+# PLAN PRODUCTION — merge vers main
 
+plan-production:
+  stage: plan-production
+  image:
+    name: hashicorp/terraform:1.10
+    entrypoint: [""]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+  script:
+    - terraform -chdir=infra/terraform/environments/production init
+    - terraform -chdir=infra/terraform/environments/production plan -no-color -out=production.tfplan
+  artifacts:
+    paths:
+      - infra/terraform/environments/production/production.tfplan
+    expire_in: 1 day
 
 # APPLY STAGING — merge vers main en automatique
 
@@ -142,27 +151,6 @@ apply-staging:
   script:
     - terraform -chdir=infra/terraform/environments/staging init
     - terraform -chdir=infra/terraform/environments/staging apply -auto-approve
-
-
-
-# PLAN PRODUCTION — merge vers main
-
-plan-production:
-  stage: plan-production
-  image:
-    name: hashicorp/terraform:1.10
-    entrypoint: [""]
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-  script:
-    - terraform -chdir=infra/terraform/environments/production init
-    - terraform -chdir=infra/terraform/environments/production plan -no-color -out=production.tfplan
-  artifacts:
-    paths:
-      - infra/terraform/environments/production/production.tfplan
-    expire_in: 1 day
-
-
 
 # APPLY PRODUCTION — intervention manuel en plus pour plus de sécurité
 
