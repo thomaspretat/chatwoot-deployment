@@ -10,7 +10,23 @@ packer {
       version = "~> 1"
       source = "github.com/hashicorp/ansible"
     }
+    amazon-ami-management = {
+      version = ">= 1.0.0"
+      source  = "github.com/wata727/amazon-ami-management"
+    }
   }
+}
+
+variable "gitlab_registry_user" {
+  type      = string
+  default   = env("GITLAB_REGISTRY_USER")
+  sensitive = true
+}
+
+variable "gitlab_registry_token" {
+  type      = string
+  default   = env("GITLAB_REGISTRY_TOKEN")
+  sensitive = true
 }
 
 data "amazon-ami" "ubuntu" {

@@ -2,61 +2,87 @@
 #   AWS_ACCESS_KEY_ID
 #   AWS_SECRET_ACCESS_KEY
 #   AWS_DEFAULT_REGION
+#   PACKER_GITHUB_API_TOKEN    (GitHub PAT sans scope — évite le rate limit sur packer init)
+#   GITLAB_REGISTRY_USER       (Deploy token username du projet chatwoot — scope: read_registry)
+#   GITLAB_REGISTRY_TOKEN      (Deploy token value du projet chatwoot — scope: read_registry)
+
+default:
+  tags:
+    - chatwoot-runner
+
 
 stages:
   - validate
   - build-ami
   - plan-staging
-  - apply-staging
   - plan-production
+  - apply-staging
   - apply-production
 
 
+# TEMPLATES
 
-# VALIDATE — toutes les MRs
+.terraform-base:
+  image:
+    name: hashicorp/terraform:1.10
+    entrypoint: [""]
+  before_script:
+    - cd $TF_ROOT
+
+.packer-build:
+  stage: build-ami
+  image:
+    name: hashicorp/packer:1.11
+    entrypoint: [""]
+  variables:
+    ANSIBLE_REMOTE_TEMP: /tmp/.ansible/tmp
+  before_script:
+    - apk add --no-cache ansible openssh-client
+    - cd infra/packer
+    - packer init .
+
+
+# VALIDATE — toutes les MRs vers staging
 
 format:
+  extends: .terraform-base
   stage: validate
-  image: hashicorp/terraform:1.10
+  variables:
+    TF_ROOT: infra/terraform
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging"
   script:
-    - terraform fmt -check -recursive infra/terraform/
+    - terraform fmt -check -recursive
 
 validate-staging:
+  extends: .terraform-base
   stage: validate
-  image: hashicorp/terraform:1.10
+  variables:
+    TF_ROOT: infra/terraform/environments/staging
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging"
   script:
-    - terraform -chdir=infra/terraform/environments/staging init -backend=false
-    - terraform -chdir=infra/terraform/environments/staging validate
+    - terraform init -backend=false
+    - terraform validate
 
 validate-production:
+  extends: .terraform-base
   stage: validate
-  image: hashicorp/terraform:1.10
+  variables:
+    TF_ROOT: infra/terraform/environments/production
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging"
   script:
-    - terraform -chdir=infra/terraform/environments/production init -backend=false
-    - terraform -chdir=infra/terraform/environments/production validate
-
+    - terraform init -backend=false
+    - terraform validate
 
 
 # BUILD AMI — rebuild en fonction de ce qu'il y a de changé
 
-.packer-build:
-  stage: build-ami
-  image: hashicorp/packer:1.11
-  before_script:
-    - apk add --no-cache ansible
-    - cd infra/packer
-    - packer init .
-
 build-ami:chatwoot:
   extends: .packer-build
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
       changes:
         - infra/packer/common.pkr.hcl
         - infra/packer/chatwoot.pkr.hcl
@@ -71,7 +97,7 @@ build-ami:chatwoot:
 build-ami:monitoring:
   extends: .packer-build
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
       changes:
         - infra/packer/common.pkr.hcl
         - infra/packer/monitoring.pkr.hcl
@@ -86,71 +112,104 @@ build-ami:monitoring:
 build-ami:bastion:
   extends: .packer-build
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
       changes:
-        - infra/packer/common.pkr.hcl
         - infra/packer/bastion.pkr.hcl
+        - infra/packer/common.pkr.hcl
         - infra/ansible/bastion-playbook.yml
   script:
     - packer build -only=amazon-ebs.bastion .
 
 
-
-# PLAN STAGING — toutes les Merge Requests
+# PLAN STAGING — MR staging vers main
 
 plan-staging:
+  extends: .terraform-base
   stage: plan-staging
-  image: hashicorp/terraform:1.10
+  variables:
+    TF_ROOT: infra/terraform/environments/staging
+  needs:
+    - job: build-ami:chatwoot
+      optional: true
+    - job: build-ami:monitoring
+      optional: true
+    - job: build-ami:bastion
+      optional: true
   rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
   script:
-    - terraform -chdir=infra/terraform/environments/staging init
-    - terraform -chdir=infra/terraform/environments/staging plan -no-color -out=staging.tfplan
+    - terraform init
+    - terraform plan -no-color -out=staging.tfplan
   artifacts:
     paths:
-      - infra/terraform/environments/staging/staging.tfplan
+      - $TF_ROOT/staging.tfplan
     expire_in: 1 day
 
 
-
-# APPLY STAGING — merge vers main en automatique
-
-apply-staging:
-  stage: apply-staging
-  image: hashicorp/terraform:1.10
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-  script:
-    - terraform -chdir=infra/terraform/environments/staging init
-    - terraform -chdir=infra/terraform/environments/staging apply -auto-approve
-
-
-
-# PLAN PRODUCTION — merge vers main
+# PLAN PRODUCTION — MR staging vers main
 
 plan-production:
+  extends: .terraform-base
   stage: plan-production
-  image: hashicorp/terraform:1.10
+  variables:
+    TF_ROOT: infra/terraform/environments/production
+  needs:
+    - job: build-ami:chatwoot
+      optional: true
+    - job: build-ami:monitoring
+      optional: true
+    - job: build-ami:bastion
+      optional: true
   rules:
-    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
   script:
-    - terraform -chdir=infra/terraform/environments/production init
-    - terraform -chdir=infra/terraform/environments/production plan -no-color -out=production.tfplan
+    - terraform init
+    - terraform plan -no-color -out=production.tfplan
   artifacts:
     paths:
-      - infra/terraform/environments/production/production.tfplan
+      - $TF_ROOT/production.tfplan
     expire_in: 1 day
 
 
+# APPLY STAGING — intervention manuelle après merge vers main
 
-# APPLY PRODUCTION — intervention manuel en plus pour plus de sécurité
-
-apply-production:
-  stage: apply-production
-  image: hashicorp/terraform:1.10
+apply-staging:
+  extends: .terraform-base
+  stage: apply-staging
+  variables:
+    TF_ROOT: infra/terraform/environments/staging
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: manual
   script:
-    - terraform -chdir=infra/terraform/environments/production init
-    - terraform -chdir=infra/terraform/environments/production apply -auto-approve
+    - terraform init
+    - terraform apply -auto-approve -no-color
+    - terraform output -json > outputs.json
+  artifacts:
+    name: "terraform-staging-apply-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - $TF_ROOT/outputs.json
+    expire_in: 7 days
+    when: always
+
+
+# APPLY PRODUCTION — intervention manuelle après merge vers main
+
+apply-production:
+  extends: .terraform-base
+  stage: apply-production
+  variables:
+    TF_ROOT: infra/terraform/environments/production
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - terraform init
+    - terraform apply -auto-approve -no-color
+    - terraform output -json > outputs.json
+  artifacts:
+    name: "terraform-production-apply-$CI_COMMIT_SHORT_SHA"
+    paths:
+      - $TF_ROOT/outputs.json
+    expire_in: 7 days
+    when: always
