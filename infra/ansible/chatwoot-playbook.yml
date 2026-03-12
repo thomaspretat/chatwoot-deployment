@@ -75,8 +75,15 @@
         enabled: yes
         daemon_reload: yes
 
+    - name: Se connecter au registry GitLab
+      shell: echo "{{ gitlab_registry_token }}" | docker login registry.gitlab.com -u "{{ gitlab_registry_user }}" --password-stdin
+      no_log: true
+
     - name: Pré-pull de l'image Chatwoot # cache les layers dans l'AMI pour un pull plus rapide lors du script de provisionning
       shell: cd /app/chatwoot && docker compose -f docker-compose-prod.yml pull
+
+    - name: Se déconnecter du registry GitLab
+      shell: docker logout registry.gitlab.com
 
     # SSH Hardening
 

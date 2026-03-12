@@ -2,7 +2,9 @@
 #   AWS_ACCESS_KEY_ID
 #   AWS_SECRET_ACCESS_KEY
 #   AWS_DEFAULT_REGION
-#   PACKER_GITHUB_API_TOKEN  (GitHub PAT sans scope — évite le rate limit sur packer init)
+#   PACKER_GITHUB_API_TOKEN    (GitHub PAT sans scope — évite le rate limit sur packer init)
+#   GITLAB_REGISTRY_USER       (Deploy token username du projet chatwoot — scope: read_registry)
+#   GITLAB_REGISTRY_TOKEN      (Deploy token value du projet chatwoot — scope: read_registry)
 
 default:
   tags:
