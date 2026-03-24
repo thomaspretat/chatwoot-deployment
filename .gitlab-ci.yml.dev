@@ -1,0 +1,103 @@
+# VARIABLES CICD A METTRE DANS GITLAB
+
+# AWS_ACCESS_KEY_ID = Credentials du User IAM
+# AWS_SECRET_ACCESS_KEY = Credentials du User IAM
+# AWS_DEFAULT_REGION = Region qu'on utilise : eu-west-3
+# CIRCLECI_TOKEN
+
+default:
+  tags:
+    - chatwoot-runner
+
+stages:
+  - build
+  - security
+  - deploy-staging
+  - deploy-production
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "staging"
+    - if: $CI_COMMIT_BRANCH == "staging"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+variables:
+  IMAGE: $CI_REGISTRY_IMAGE/chatwoot # variable prédéfinis sous forme de registry.gitlab/batch23-gr1/chatwoot
+
+# Build & push notre image docker sur notre container registry
+build:
+  stage: build
+  needs: []
+  image: docker:latest
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -t $IMAGE:$CI_COMMIT_SHORT_SHA -t $IMAGE:staging -f docker/Dockerfile .
+    - docker push $IMAGE:$CI_COMMIT_SHORT_SHA
+    - docker push $IMAGE:staging
+  rules:
+    - if: $CI_COMMIT_BRANCH == "staging"
+
+# Scan si vulnérabilité existe sur notre image docker build juste avant
+trivy-scan:
+  stage: security
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: ['']
+  needs: ['build']
+  variables:
+    TRIVY_USERNAME: $CI_REGISTRY_USER
+    TRIVY_PASSWORD: $CI_REGISTRY_PASSWORD
+  script:
+    - trivy image --exit-code 0 --severity HIGH $IMAGE:$CI_COMMIT_SHORT_SHA
+    - trivy image --exit-code 0 --severity CRITICAL $IMAGE:$CI_COMMIT_SHORT_SHA
+    - trivy image --format json --output trivy-report.json $IMAGE:$CI_COMMIT_SHORT_SHA
+  artifacts:
+    paths:
+      - trivy-report.json
+    when: always
+  rules:
+    - if: $CI_COMMIT_BRANCH == "staging"
+
+# Deploy staging = automatique après merge dans staging
+deploy-staging:
+  stage: deploy-staging
+  image:
+    name: amazon/aws-cli:latest
+    entrypoint: ['']
+  needs: ['build', 'trivy-scan']
+  script:
+    - >
+      aws ssm send-command
+      --targets "Key=tag:Role,Values=chatwoot" "Key=tag:Environment,Values=staging"
+      --document-name "AWS-RunShellScript"
+      --parameters 'commands=["cd /app/chatwoot && docker compose -f docker-compose-staging.yml pull && docker compose -f docker-compose-staging.yml up -d && docker image prune -af && docker compose -f docker-compose-staging.yml exec -T rails bundle exec rails db:chatwoot_prepare || true"]'
+      --region eu-west-3
+  rules:
+    - if: $CI_COMMIT_BRANCH == "staging"
+
+# Retag l'image staging en latest sur le registry
+retag-production:
+  stage: deploy-production
+  image: docker:latest
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker pull $IMAGE:staging
+    - docker tag $IMAGE:staging $IMAGE:latest
+    - docker push $IMAGE:latest
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+
+# Deploy production = déploiement manuel, refresh les ASG
+deploy-production:
+  stage: deploy-production
+  image: amazon/aws-cli:latest
+  needs: ['retag-production']
+  script:
+    - >
+      aws autoscaling start-instance-refresh
+      --auto-scaling-group-name chatwoot-production-asg
+      --region eu-west-3
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
